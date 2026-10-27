@@ -1,0 +1,32 @@
+keyword,intent,priority,domain
+producción audiovisual para eventos,Transaccional,P1,3av.events
+empresa audiovisual para eventos,Transaccional,P1,3av.events
+audiovisuales para congresos,Transaccional,P1,3av.events
+producción audiovisual para congresos,Transaccional,P1,3av.events
+sistemas de proyección para eventos,Comercial-mixta,P1,3av.events
+iluminación para eventos profesionales,Comercial-mixta,P1,3av.events
+sonido para eventos,Comercial-mixta,P1,3av.events
+alquiler equipo audiovisual eventos,Transaccional,P2,3av.events
+productora audiovisual madrid,Transaccional,P2,3av.events
+videoconferencia profesional,Comercial-mixta,P2,3av.events
+streaming eventos en directo,Comercial-mixta,P2,3av.events
+retransmisión en vivo eventos,Comercial-mixta,P2,3av.events
+producción de eventos corporativos,Transaccional,P2,3av.events
+dirección de fotografía eventos,Comercial-mixta,P3,3av.events
+edición de vídeo profesional,Comercial-mixta,P3,3av.events
+plataforma de streaming especializada,Informacional,P3,3av.events
+transmisión de congresos online,Comercial-mixta,P2,astisl.es
+hosting de eventos virtuales,Transaccional,P2,astisl.es
+plataforma eventos virtuales,Comercial-mixta,P2,astisl.es
+webinar profesional en directo,Comercial-mixta,P2,astisl.es
+soluciones audiovisuales integradas,Comercial-mixta,P3,astisl.es
+consultoría eventos digitales,Informacional,P3,astisl.es
+producción contenido multimedia,Comercial-mixta,P2,astisl.es
+servicios audiovisuales profesionales,Transaccional,P1,astisl.es
+experiencias immersivas eventos,Comercial-mixta,P3,astisl.es
+realidad aumentada para eventos,Comercial-mixta,P3,astisl.es
+hologramas para presentaciones,Comercial-mixta,P3,astisl.es
+videomapping profesional,Comercial-mixta,P3,astisl.es
+eventos corporativos producción,Transaccional,P2,astisl.es
+agencia de comunicación audiovisual,Transaccional,P2,astisl.es
+marketing experiencial audiovisual,Comercial-mixta,P2,astisl.es
