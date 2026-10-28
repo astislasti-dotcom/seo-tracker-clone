@@ -151,7 +151,7 @@ export default function Dashboard() {
               Control SEO Integral
             </h1>
             <p style={{ color: '#888', fontSize: '12px', margin: '4px 0 0 0' }}>
-              Última actualización: {new Date().toLocaleDateString('es-ES')}
+              Última actualización: hoy
             </p>
           </div>
 
