@@ -31,21 +31,21 @@ Se adopta **implantación gradual** para no introducir consumo de API, tareas du
 
 Ejecuta:
 1. `npm ci --no-audit --no-fund`.
-2. `npm run lint`.
+2. `npx eslint` **únicamente sobre los archivos JS/TS modificados por el PR**, para no bloquear cambios ajenos por deuda anterior.
 3. `node --check` de los dos scripts `.mjs` de tracking.
 
-Tiene límite de 12 minutos y cancela comprobaciones anteriores del mismo PR cuando llegan nuevos commits. **No ejecuta `npm run build`**, consultas a SerpAPI/GSC, accesos a Supabase ni migraciones. El build queda a cargo de Vercel Preview y debe comprobarse aparte.
+Tiene límite de 12 minutos y cancela comprobaciones anteriores del mismo PR cuando llegan nuevos commits. Utiliza versiones oficiales recientes de las acciones y desactiva la caché compartida de npm. **No ejecuta `npm run build`**, consultas a SerpAPI/GSC, accesos a Supabase ni migraciones. El build queda a cargo de Vercel Preview y debe comprobarse aparte.
 
 GitHub declara gratuito el uso de runners estándar en **repositorios públicos**. Si se hace privado el repositorio, se cambia a runners grandes o se ajustan las reglas de facturación, **revisar los costes antes de continuar**. Esta configuración no llama a ninguna API de IA de pago.
 
-**Límite importante:** un CI verde solo significa que se pasaron estas comprobaciones; no demuestra ausencia de bugs, seguridad completa ni funcionamiento de Vercel.
+**Límite importante:** un CI verde solo significa que se pasaron estas comprobaciones; no demuestra ausencia de bugs, seguridad completa ni funcionamiento de Vercel. La comprobación limitada a archivos modificados **no sustituye al lint completo**. En la primera ejecución de este PR el lint completo reveló **7 errores y 5 avisos preexistentes** en componentes/páginas/scripts que este PR no cambia. Se debe abrir una tarea de saneamiento independiente; no se ha modificado el código de la aplicación.
 
 ### 1C. Activación y prueba
 
 1. El responsable inspecciona el PR de configuración, confirma que solo hay los tres archivos previstos y **autoriza la fusión**.
 2. Después de fusionarlo, comprobar en [GitHub Actions](https://github.com/astislasti-dotcom/seo-tracker-clone/actions) que aparece `PR - calidad basica`; se ejecutará al abrir/actualizar PR destinados a `main`.
 3. Probar en un PR posterior y verificar los resultados. Si el lint falla por problemas **previos** del repositorio, documentar el fallo y corregir el baseline en otro PR; no falsear las comprobaciones para mostrar verde.
-4. Revisar [las reglas de ramas en GitHub](https://github.com/astislasti-dotcom/seo-tracker-clone/settings/branches) y activar restricciones de fusión y comprobaciones obligatorias **solo tras** validar que el CI funciona. La protección de ramas es un ajuste de GitHub separado; este PR no la activa.
+4. Corregir en una tarea independiente los errores ESLint existentes, y entonces proponer volver a un lint global obligatorio para todos los PR. Revisar [las reglas de ramas en GitHub](https://github.com/astislasti-dotcom/seo-tracker-clone/settings/branches) y activar restricciones de fusión y comprobaciones obligatorias **solo tras** validar que el CI funciona. La protección de ramas es un ajuste de GitHub separado; este PR no la activa.
 
 **No confundir crear el PR de configuración con activar el workflow.** GitHub puede ejecutar workflows añadidos en el propio PR, según su política de Actions; los cambios no quedarán en `main` hasta la fusión.
 
