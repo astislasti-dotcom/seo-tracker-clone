@@ -37,9 +37,9 @@ Ambos motores pueden programar y revisar: el reparto anterior es una organizaci�
 
 ## 3. Procedimiento obligatorio antes de trabajar
 
-1. Leer este archivo **y** \`AGENTS.md\` (incluidas sus instrucciones específicas de Next.js).
+1. Leer este archivo **y** `AGENTS.md` (incluidas sus instrucciones específicas de Next.js).
 2. Comprobar el estado del repositorio, rama, cambios sin confirmar, PR abiertos y tareas asignadas.
-3. Leer los archivos de código afectados y las dependencias reales de \`package.json\`. No programar basándose solo en suposiciones.
+3. Leer los archivos de código afectados y las dependencias reales de `package.json`. No programar basándose solo en suposiciones.
 4. Consultar las decisiones ya aprobadas en issues/PR y la documentación del proyecto, si existe.
 5. Delimitar el trabajo: problema, objetivo, archivos afectados, riesgos, criterios de aceptación y pruebas.
 6. Si falta acceso, una credencial, una guía de marca o una decisión de producto, **indicarlo**. No inventar información.
@@ -53,20 +53,20 @@ Ambos motores pueden programar y revisar: el reparto anterior es una organizaci�
 
 | Qué necesitas | Dónde mirar |
 | --- | --- |
-| Dependencias y scripts | \`package.json\`, \`package-lock.json\` |
-| Guía de agentes/versión Next | \`AGENTS.md\` y documentación de la versión instalada |
-| Dashboard actual con datos | \`app/dashboard/page.jsx\` |
-| Portada y componentes alternativos | \`app/page.jsx\`, \`app/components/Dashboard.jsx\`, \`KeywordTable.jsx\`, \`StatsCards.jsx\` |
-| Estilos y tipografía | \`app/globals.css\`, \`app/components/globals.css\`, \`app/layout.jsx\` |
-| Keywords iniciales y segmentación | \`public/keywords.json\`, \`keywords-31.json\`, \`keywords-31.csv\` |
-| API de keywords | \`app/api/keywords/route.js\` |
-| Seguimiento y experimentos previos | \`scripts/track-keywords*.mjs\` |
-| Cron y rutas de seguimiento | \`vercel.json\`, \`app/api/cron/\` |
+| Dependencias y scripts | `package.json`, `package-lock.json` |
+| Guía de agentes/versión Next | `AGENTS.md` y documentación de la versión instalada |
+| Dashboard actual con datos | `app/dashboard/page.jsx` |
+| Portada y componentes alternativos | `app/page.jsx`, `app/components/Dashboard.jsx`, `KeywordTable.jsx`, `StatsCards.jsx` |
+| Estilos y tipografía | `app/globals.css`, `app/components/globals.css`, `app/layout.jsx` |
+| Keywords iniciales y segmentación | `public/keywords.json`, `keywords-31.json`, `keywords-31.csv` |
+| API de keywords | `app/api/keywords/route.js` |
+| Seguimiento y experimentos previos | `scripts/track-keywords*.mjs` |
+| Cron y rutas de seguimiento | `vercel.json`, `app/api/cron/` |
 | Cambios y contexto histórico | Historial de Git, issues y pull requests de este repositorio |
 | Despliegues, errores y variables configuradas | Proyecto correspondiente en Vercel, solo con permiso/acceso autorizado |
 | Tablas, políticas y resultados reales | Proyecto correspondiente en Supabase, solo con permiso/acceso autorizado |
 
-El código actual incluye **dos implementaciones de interfaz** (portada y \`/dashboard\`). Antes de refactorizar, identificar cuál debe ser la experiencia definitiva.
+El código actual incluye **dos implementaciones de interfaz** (portada y `/dashboard`). Antes de refactorizar, identificar cuál debe ser la experiencia definitiva.
 
 La lista inicial contiene **31 keywords: 16 de 3AV y 15 de ASTI**. Esto es el punto de partida del repositorio, no un límite funcional deseado.
 
@@ -80,7 +80,7 @@ La lista inicial contiene **31 keywords: 16 de 3AV y 15 de ASTI**. Esto es el pu
 ### 4.3 Tercero: documentación técnica oficial (no tutoriales antiguos)
 
 - Next.js App Router y Route Handlers: https://nextjs.org/docs/app
-- Documentación instalada de Next.js: \`node_modules/next/dist/docs/\` (cuando exista localmente; respetar \`AGENTS.md\`).
+- Documentación instalada de Next.js: `node_modules/next/dist/docs/` (cuando exista localmente; respetar `AGENTS.md`).
 - Vercel Cron: https://vercel.com/docs/cron-jobs
 - Vercel Cron quickstart: https://vercel.com/docs/cron-jobs/quickstart
 - Supabase: https://supabase.com/docs
@@ -97,8 +97,8 @@ Consultar la documentación de la **versión instalada**, no asumir que un ejemp
 
 El producto tendrá una **interfaz de analítica neutra, coherente y legible**, y permitirá elegir el contexto: **Todas / 3AV / ASTI**. La identidad de cada marca se aplicará en sus vistas y elementos de identificación, sin mezclarlas ni convertir sus colores en semáforos de métricas.
 
-- **ASTI:** verde petróleo \`#004E5A\`, turquesa \`#33C4B4\`, gris \`#B4B4B4\`.
-- **3AV:** negro carbón editorial \`#171717\`, acento dorado editorial \`#D6AC62\`, terracota puntual \`#A84E35\`. El logotipo oficial conserva sus variantes negro, blanco y pastilla; no inventar ni modificar el logo.
+- **ASTI:** verde petróleo `#004E5A`, turquesa `#33C4B4`, gris `#B4B4B4`.
+- **3AV:** negro carbón editorial `#171717`, acento dorado editorial `#D6AC62`, terracota puntual `#A84E35`. El logotipo oficial conserva sus variantes negro, blanco y pastilla; no inventar ni modificar el logo.
 - **Tipografías de referencia:** Montserrat (títulos) y Open Sans (texto), cuando estén disponibles.
 - Priorizar navegación clara, filtros consistentes, responsive, tablas útiles, contraste accesible, estados de carga/error/sin datos y fechas verificables.
 - Una pantalla debe ayudar a **decidir qué acción tomar**, no acumular tarjetas redundantes.
@@ -108,17 +108,17 @@ Los activos y manuales corporativos no figuran actualmente como fuente de verdad
 ## 6. Rigor SEO, GEO y modelo de datos
 
 - Diferenciar **posición media de Search Console** de una **posición SERP obtenida con proveedor externo**: son métricas distintas, con fuentes, fechas, países y metodologías identificables.
-- Nunca presentar un error de consulta, un dato pendiente o un resultado ausente como posición \`0\` equivalente a «no posiciona».
+- Nunca presentar un error de consulta, un dato pendiente o un resultado ausente como posición `0` equivalente a «no posiciona».
 - Guardar la fuente, marca/dominio, keyword, fecha de medición, resultado, estado y, cuando proceda, dispositivo, idioma, país y URL.
 - El dashboard debe obtener **la última observación válida por keyword y dominio**, no asumir que las últimas N filas globales representan todas las keywords.
 - No afirmar «datos actualizados hoy» si no se ha verificado una ejecución correcta.
-- Distinguir keywords prioritarias \`P1/P2/P3\` de posiciones de Google \`1–10\` para evitar ambigüedad.
+- Distinguir keywords prioritarias `P1/P2/P3` de posiciones de Google `1–10` para evitar ambigüedad.
 - En GEO no afirmar «visibilidad universal en IA»: diseñar mediciones repetibles por pregunta, motor, configuración, fecha, evidencia y presencia/citación de marca.
 - Antes de atribuir cambios de tráfico a una acción, considerar periodo, fuente y otras explicaciones posibles.
 
 ## 7. Seguridad, permisos y estabilidad
 
-**Incidencia urgente identificada en el código:** una credencial de SerpAPI se publicó literalmente en \`scripts/track-keywords-serpapi.mjs\`. Tratarla como **comprometida**. El usuario/administrador debe revocarla y emitir otra en el proveedor; borrar la línea no invalida el secreto ni elimina el historial de Git.
+**Incidencia urgente identificada en el código:** una credencial de SerpAPI se publicó literalmente en `scripts/track-keywords-serpapi.mjs`. Tratarla como **comprometida**. El usuario/administrador debe revocarla y emitir otra en el proveedor; borrar la línea no invalida el secreto ni elimina el historial de Git.
 
 - Nunca imprimir, copiar a un PR, volver a commitear, registrar en logs ni comunicar claves o secretos. En los informes usar **nombres de variables**, no valores.
 - Variables de entorno y servicios externos: gestionarlas en Vercel/entorno seguro, diferenciando pública vs. servidor; las claves administrativas jamás al navegador.
@@ -126,26 +126,26 @@ Los activos y manuales corporativos no figuran actualmente como fuente de verdad
 - Cambios de permisos, migraciones, borrados, rotación de claves, cuotas de APIs y acciones de producción necesitan autorización explícita.
 - Evitar scrapers de Google frágiles o técnicas que infrinjan condiciones de uso; valorar fiabilidad, costes y alternativas antes de decidir proveedor.
 - No provocar ejecuciones masivas de tracking ni costes externos para probar algo sin consentimiento.
-- No modificar \`main\` directamente, no forzar pushes ni desplegar a producción sin aprobación.
+- No modificar `main` directamente, no forzar pushes ni desplegar a producción sin aprobación.
 
 ## 8. Flujo de trabajo entre motores
 
 1. **Issue o encargo:** objetivo, contexto, resultado esperado, límites y criterios de aceptación. Una tarea delimitada por PR.
-2. **Ramas independientes:** \`claude/<tema>\` para Claude y \`chatgpt/<tema>\` para ChatGPT; \`docs/<tema>\` para documentación. No trabajar sobre los mismos archivos simultáneamente sin coordinación.
+2. **Ramas independientes:** `claude/<tema>` para Claude y `chatgpt/<tema>` para ChatGPT; `docs/<tema>` para documentación. No trabajar sobre los mismos archivos simultáneamente sin coordinación.
 3. **Implementación:** cambios mínimos y trazables; aprovechar lo existente; evitar refactorizaciones masivas no solicitadas.
-4. **Pruebas:** ejecutar como mínimo \`npm ci\`, \`npm run lint\` y \`npm run build\` cuando el entorno lo permita. Si una prueba falla o no se pudo ejecutar, documentarlo; no inventar un resultado correcto. Añadir pruebas específicas cuando corresponda.
-5. **Pull request a \`main\`:** incluir resumen, motivación, archivos afectados, capturas para cambios visuales, pruebas ejecutadas, riesgos, migraciones y pasos manuales.
+4. **Pruebas:** ejecutar como mínimo `npm ci`, `npm run lint` y `npm run build` cuando el entorno lo permita. Si una prueba falla o no se pudo ejecutar, documentarlo; no inventar un resultado correcto. Añadir pruebas específicas cuando corresponda.
+5. **Pull request a `main`:** incluir resumen, motivación, archivos afectados, capturas para cambios visuales, pruebas ejecutadas, riesgos, migraciones y pasos manuales.
 6. **Revisión cruzada:** el otro motor revisa código, UX, coherencia SEO y riesgos; deja comentarios concretos en GitHub. La revisión no equivale a aprobación de publicación.
 7. **Preview:** comprobar versión desplegada de la rama/PR en Vercel si está configurada. Los cron de Vercel se ejecutan en producción, no en los previews.
-8. **Aprobación:** el usuario da el visto bueno antes de integrar a \`main\` o hacer cambios de producción.
+8. **Aprobación:** el usuario da el visto bueno antes de integrar a `main` o hacer cambios de producción.
 9. **Cierre:** actualizar el issue/PR y registrar decisiones o incidencias nuevas. Nada de depender de «lo que dijimos en el chat».
 
 **Propuesta de documentación futura (crear solo cuando haga falta):**
-- \`docs/PRODUCT.md\`: objetivos, usuarios y alcance.
-- \`docs/UX.md\`: decisiones UX/UI y patrones de componentes.
-- \`docs/ROADMAP.md\`: tareas por fases.
-- \`docs/DECISIONS.md\`: registro fechado de decisiones aprobadas.
-- \`docs/DATA_SOURCES.md\`: procedencia, periodicidad y definiciones de métricas (sin secretos).
+- `docs/PRODUCT.md`: objetivos, usuarios y alcance.
+- `docs/UX.md`: decisiones UX/UI y patrones de componentes.
+- `docs/ROADMAP.md`: tareas por fases.
+- `docs/DECISIONS.md`: registro fechado de decisiones aprobadas.
+- `docs/DATA_SOURCES.md`: procedencia, periodicidad y definiciones de métricas (sin secretos).
 
 ## 9. Hoja de ruta orientativa (pendiente de priorización)
 
