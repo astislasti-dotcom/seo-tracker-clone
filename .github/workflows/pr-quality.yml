@@ -1,0 +1,63 @@
+# Fase 1: comprobaciones tecnicas. Sin IA, sin tokens de terceros y sin escritura en GitHub.
+name: PR - calidad basica
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-quality-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    name: ESLint y sintaxis
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Obtener codigo sin guardar credenciales
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          package-manager-cache: false
+
+      - name: Instalar dependencias (sin auditoria externa)
+        run: npm ci --no-audit --no-fund
+
+      # El repositorio ya tiene errores ESLint anteriores a este PR.
+      # Se comprueban los fuentes modificados para no bloquear PR ajenos a esa deuda.
+      - name: ESLint sobre archivos de codigo cambiados
+        shell: bash
+        run: |
+          mapfile -d '' changed < <(
+            git diff --name-only --diff-filter=ACMR -z 'origin/main...HEAD'
+          )
+          source_files=()
+          for file in "${changed[@]}"; do
+            if [[ "$file" =~ \.(js|jsx|mjs|cjs|ts|tsx)$ ]]; then
+              source_files+=("$file")
+            fi
+          done
+          if (( ${#source_files[@]} > 0 )); then
+            npx eslint "${source_files[@]}"
+          else
+            echo 'Sin archivos JS/TS modificados; ESLint no aplicable a este PR.'
+          fi
+
+      - name: Sintaxis de scripts locales
+        run: |
+          node --check scripts/track-keywords-serpapi.mjs
+          node --check scripts/track-keywords-gsc.mjs
+
+# No se ejecuta npm run build: Vercel ya gestiona Preview.
+# No se hacen llamadas a SerpAPI, GSC ni Supabase.

@@ -1,6 +1,6 @@
 # Protocolo de colaboración — SEO Tracker
 
-**Estado:** propuesta operativa pendiente de incorporación a `main` mediante PR #1.  
+**Estado:** vigente en `main` desde la fusión del PR #1 (29 de octubre de 2026).  
 **Ámbito:** Claude, ChatGPT y cualquier agente que acceda al repositorio `astislasti-dotcom/seo-tracker-clone`.  
 **Propietario de las decisiones:** la persona responsable del proyecto; los asistentes no sustituyen su autorización.
 
@@ -14,7 +14,9 @@
 
 **No reactivar trabajos cancelados:** si el usuario ha ordenado retirar una rama o un commit, no volver a publicar el mismo trabajo aunque siga disponible en el entorno local. Antes de ejecutar un `push` comprobar que se trata de un encargo vigente y aprobado; nunca sincronizar automáticamente una rama antigua. Si la plataforma crea una rama o la publica automáticamente incluso durante una lectura, detener el flujo y usar Claude.ai en modo chat con conector GitHub de lectura o comunicar la limitación antes de continuar.
 
-**Caso real:** el commit `8e04ad5` de `claude/documentation` fue retirado de la rama remota y reapareció después. Esto **no** es una tarea nueva ni está autorizado; debe permanecer retirado. El único PR documental vigente es [PR #1](https://github.com/astislasti-dotcom/seo-tracker-clone/pull/1), a la espera de aprobación del usuario.
+**Caso real:** el commit `8e04ad5` de `claude/documentation` fue retirado de la rama remota y reapareció después. Esto **no** es una tarea nueva ni está autorizado; debe permanecer retirado. El [PR #1](https://github.com/astislasti-dotcom/seo-tracker-clone/pull/1) **ya fue fusionado**. Consultar siempre los PR abiertos actuales; los números de PR de ejemplos históricos no indican tareas pendientes.
+
+**Automatización gradual:** consultar [AUTOMATIZACION_COLABORACION.md](AUTOMATIZACION_COLABORACION.md) para distinguir comprobaciones nativas, revisiones de Codex y posibles correcciones con Claude Action. **La existencia de un workflow no autoriza cambios o fusiones por parte de los agentes.**
 
 ## 1. Documentos que hay que leer antes de cada encargo
 
