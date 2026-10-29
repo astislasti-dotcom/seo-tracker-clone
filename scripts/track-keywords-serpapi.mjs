@@ -6,17 +6,25 @@ import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load env
+// Load env from .env.local file (if it exists)
 function loadEnv(filePath) {
   const env = {};
-  const content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const [key, ...valueParts] = trimmed.split('=');
-      env[key.trim()] = valueParts.join('=').trim();
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const [key, ...valueParts] = trimmed.split('=');
+        env[key.trim()] = valueParts.join('=').trim();
+      }
     }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      // Only ignore "file not found" errors; re-throw other errors
+      throw error;
+    }
+    // .env.local does not exist; continue with empty env object
   }
   return env;
 }
@@ -26,15 +34,19 @@ const env = loadEnv(envPath);
 
 console.log('🔐 Supabase URL:', env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Loaded' : '❌ Missing');
 console.log('🔑 Supabase Key:', env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Loaded' : '❌ Missing');
-console.log('🔍 SerpAPI Key:', process.env.SERPAPI_API_KEY ? '✅ Loaded' : '❌ Missing (use SERPAPI_API_KEY env var)');
 
-// Load SerpAPI key from environment variable
-const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
+// Load SerpAPI key from environment or .env.local
+// Precedence: process.env > .env.local
+const SERPAPI_KEY = process.env.SERPAPI_API_KEY || env.SERPAPI_API_KEY;
+
+console.log('🔍 SerpAPI Key:', SERPAPI_KEY ? '✅ Loaded' : '❌ Missing (set SERPAPI_API_KEY in .env.local or environment)');
 
 // Exit early if SerpAPI key is missing
 if (!SERPAPI_KEY) {
-  console.error('❌ Error: SERPAPI_API_KEY environment variable is not set.');
-  console.error('Please set SERPAPI_API_KEY in your .env.local or system environment.');
+  console.error('❌ Error: SERPAPI_API_KEY is not set.');
+  console.error('Please set SERPAPI_API_KEY in:');
+  console.error('  - System environment variable, or');
+  console.error('  - .env.local file (SERPAPI_API_KEY=your_key_here)');
   process.exit(1);
 }
 
