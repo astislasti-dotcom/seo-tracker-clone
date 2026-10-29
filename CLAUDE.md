@@ -5,6 +5,10 @@
 > Propietario de producto: usuario responsable del proyecto. Ningún asistente sustituye su aprobación.
 > Estado: guía inicial de colaboración. Las funcionalidades propuestas no deben darse por implementadas.
 
+## Lectura obligatoria antes de actuar
+
+**Consultar primero [docs/PROTOCOLO_COLABORACION.md](docs/PROTOCOLO_COLABORACION.md).** Antes de crear una rama, fichero o PR hay que revisar los trabajos abiertos, los PR (incluidos los borradores) y las ramas de los dos motores. Si ya existe la tarea, se coordina en el issue/PR existente y **no se duplica**. Los cambios en `main` y la publicación requieren aprobación expresa del responsable del proyecto.
+
 ## 1. Para qué existe este producto
 
 SEO Tracker es una aplicación interna para medir y mejorar el posicionamiento orgánico de dos marcas **independientes**:
