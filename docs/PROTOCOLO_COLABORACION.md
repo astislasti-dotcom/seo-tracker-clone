@@ -6,6 +6,16 @@
 
 > **Regla principal: consultar antes de crear, coordinar antes de modificar y revisar antes de integrar.**
 
+## 0. Modo lectura por defecto: no crear ni subir nada
+
+**La primera acción de cualquier conversación es consultar, nunca escribir.** Cuando el encargo sea leer, verificar, revisar o planificar, están **prohibidas** todas las modificaciones en el repositorio: crear/recrear ramas locales o remotas para este trabajo, editar archivos, hacer commits, ejecutar `git push` o `git push --set-upstream`, abrir PR nuevos, fusionar, revertir o resincronizar cambios anteriores. `git fetch` y las consultas de solo lectura sí están permitidas.
+
+**No existe autorización implícita de escritura por tener acceso al repositorio.** Solo se autoriza implementar cuando el usuario lo ordena expresamente y, tras comprobar ramas/issues/PR, se acuerda quién implementa, qué archivos toca y en qué rama. Si el usuario pide «lee los documentos y confirma», **la única entrega permitida es una respuesta en el chat**. Si los documentos ya existen, no volver a crearlos.
+
+**No reactivar trabajos cancelados:** si el usuario ha ordenado retirar una rama o un commit, no volver a publicar el mismo trabajo aunque siga disponible en el entorno local. Antes de ejecutar un `push` comprobar que se trata de un encargo vigente y aprobado; nunca sincronizar automáticamente una rama antigua. Si la plataforma crea una rama o la publica automáticamente incluso durante una lectura, detener el flujo y usar Claude.ai en modo chat con conector GitHub de lectura o comunicar la limitación antes de continuar.
+
+**Caso real:** el commit `8e04ad5` de `claude/documentation` fue retirado de la rama remota y reapareció después. Esto **no** es una tarea nueva ni está autorizado; debe permanecer retirado. El único PR documental vigente es [PR #1](https://github.com/astislasti-dotcom/seo-tracker-clone/pull/1), a la espera de aprobación del usuario.
+
 ## 1. Documentos que hay que leer antes de cada encargo
 
 **Siempre y en este orden:**
