@@ -1,8 +1,9 @@
 # Pruebas de seguridad — TAREA 002
 
 **Rama:** `claude/security-credentials`  
-**Commits:** `72cbae5` + `f143f7d`  
-**Fecha:** 2026-10-29  
+**Commits:** `72cbae5` + `f143f7d` + `1a3f0e6` + `edad624`  
+**Fecha de actualización:** 2026-10-29  
+**Revisiones ChatGPT:** 3 (inicial, segunda con hallazgos, tercera solicitando correcciones)  
 
 ---
 
@@ -18,117 +19,141 @@ El script `scripts/track-keywords-serpapi.mjs` ha sido corregido para:
 
 ## Pruebas ejecutadas (sin llamadas a SerpAPI ni inserciones en Supabase)
 
-### ✅ Prueba 1: Sintaxis válida
+### Conjunto 1: Verificaciones básicas
+
+#### ✅ Prueba 1.1: Sintaxis válida
 ```bash
 node --check scripts/track-keywords-serpapi.mjs
 ```
-**Resultado:** ✅ PASS  
+**Resultado:** ✅ PASS (ejecutado 2026-10-29)  
 **Detalles:** Sin errores sintácticos
 
-### ✅ Prueba 2: .gitignore válido
+#### ✅ Prueba 1.2: .gitignore válido
 ```bash
 git check-ignore -v credentials.json
 ```
-**Resultado:** ✅ PASS  
+**Resultado:** ✅ PASS (ejecutado 2026-10-29)  
 **Salida:** `.gitignore:44:credentials.json	credentials.json`  
 **Conclusión:** `credentials.json` será ignorado por Git en futuras operaciones
 
-### ✅ Prueba 3: Sin SERPAPI_API_KEY (modo seguro)
-**Procedimiento:**
-- Crear `.env.local` temporal con credenciales de prueba (SIN SerpAPI_API_KEY en una versión de prueba)
-- Ejecutar script de carga de variables
-- Verificar que detecta ausencia y muestra error controlado
+#### ⚠️ Prueba 1.3: ESLint (no disponible en este entorno)
+```bash
+npm run lint
+```
+**Resultado:** ⚠️ SKIPPED  
+**Limitación:** Dependencias npm no instaladas en entorno de prueba  
+**Nota:** Vercel ejecutó checks ESLint en commit edad624 y pasó
 
+#### ⚠️ Prueba 1.4: Next.js build (no disponible en este entorno)
+```bash
+npm run build
+```
+**Resultado:** ⚠️ SKIPPED  
+**Limitación:** Dependencias npm no instaladas en entorno de prueba  
+**Nota:** Vercel ejecutó build check en commit edad624 y pasó
+
+---
+
+### Conjunto 2: Pruebas de escenarios reales con aserciones
+
+#### ✅ Prueba 2.1: Scenario 1 — Solo process.env (sin .env.local)
+```bash
+node test-env-scenarios.mjs
+```
 **Resultado:** ✅ PASS  
-**Comportamiento:**
-```
-❌ Error: SERPAPI_API_KEY is not set.
-Please set SERPAPI_API_KEY in:
-  - System environment variable, or
-  - .env.local file (SERPAPI_API_KEY=your_key_here)
-```
-**Conclusión:** Script detecta ausencia sin exponer secretos, exit code sería 1
+**Detalle del escenario:**
+- Credenciales ficticias solo en variables de proceso
+- No existe `.env.local`
+- Aserciones esperadas: todas las credenciales deben resolverse
 
-### ✅ Prueba 4: Carga desde .env.local
-**Procedimiento:**
-- Crear `.env.local` con `SERPAPI_API_KEY=test_key_from_env_local_12345`
-- Ejecutar script de carga de variables (sin variable de entorno)
-- Verificar que se carga desde archivo
+**Ejecución:**
+```
+Test: Scenario 1: Only process.env (no .env.local)
+Supabase URL: ✅ YES
+Supabase Key: ✅ YES
+SerpAPI Key: ✅ YES
+✅ ASSERTION PASSED: All credentials resolved as expected
+```
 
+#### ✅ Prueba 2.2: Scenario 2 — Solo .env.local (sin process.env)
 **Resultado:** ✅ PASS  
-**Comportamiento:**
-```
-env.SERPAPI_API_KEY from .env.local: test_key_from_env_local_12345
-Final SERPAPI_KEY: test_key_from_env_local_12345
-✅ Script loads key from .env.local when present
-```
-**Conclusión:** Script reconoce clave de `.env.local`
+**Detalle del escenario:**
+- Credenciales ficticias solo en `.env.local`
+- Variables de proceso vacías
+- Aserciones esperadas: todas las credenciales deben resolverse
 
-### ✅ Prueba 5: Carga desde process.env (precedencia)
-**Procedimiento:**
-- Crear `.env.local` con `SERPAPI_API_KEY=test_key_from_env_local_12345`
-- Ejecutar con variable de entorno: `SERPAPI_API_KEY=test_key_from_process_env_12345`
-- Verificar que `process.env` toma precedencia
+**Ejecución:**
+```
+Test: Scenario 2: Only .env.local (no process.env)
+Supabase URL: ✅ YES
+Supabase Key: ✅ YES
+SerpAPI Key: ✅ YES
+✅ ASSERTION PASSED: All credentials resolved as expected
+```
 
+#### ✅ Prueba 2.3: Scenario 3 — Ambas fuentes (precedencia de process.env)
 **Resultado:** ✅ PASS  
-**Comportamiento:**
-```
-process.env.SERPAPI_API_KEY: test_key_from_process_env_12345
-env.SERPAPI_API_KEY from .env.local: test_key_from_env_local_12345
-Final SERPAPI_KEY: test_key_from_process_env_12345
-⚠️ Both are set. Process.env takes precedence.
-```
-**Conclusión:** `process.env` tiene precedencia sobre `.env.local` (comportamiento correcto)
+**Detalle del escenario:**
+- Credenciales ficticias en AMBOS: process.env y `.env.local`
+- Valores diferentes en cada fuente
+- Aserciones esperadas: process.env gana, todas las credenciales se resuelven
 
-### ✅ Prueba 6: Manejo de .env.local ausente
-**Procedimiento:**
-- Ejecutar script cuando `.env.local` no existe
-- Verificar que no falla antes de validación de variables
+**Ejecución:**
+```
+Test: Scenario 3: Both sources (process.env > .env.local)
+Supabase URL: ✅ YES
+Supabase Key: ✅ YES
+SerpAPI Key: ✅ YES
+✅ ASSERTION PASSED: All credentials resolved as expected
+```
 
+#### ✅ Prueba 2.4: Scenario 4 — Falta todo (modo error)
 **Resultado:** ✅ PASS  
-**Comportamiento:**
-```
-ℹ️  .env.local not found or does not contain SERPAPI_API_KEY
-Script continues without crashing
-```
-**Conclusión:** Ausencia de `.env.local` se gestiona correctamente (try/catch para ENOENT)
+**Detalle del escenario:**
+- Sin credenciales en process.env
+- Sin credenciales en `.env.local`
+- Aserciones esperadas: todas las credenciales deben estar ausentes (detectado correctamente)
 
-### ✅ Prueba 7: Supabase también carga desde process.env
-**Procedimiento:**
-- Ejecutar \`test-env-loading.mjs\` sin credenciales
-- Verificar que detecta correctamente qué variables faltan
-- Confirmar que carga desde process.env con precedencia documentada
+**Ejecución:**
+```
+Test: Scenario 4: Missing all credentials
+Supabase URL: ❌ NO
+Supabase Key: ❌ NO
+SerpAPI Key: ❌ NO
+✅ ASSERTION PASSED: All credentials correctly missing
+```
 
+#### ✅ Prueba 2.5: Scenario 5 — Archivo .env.local ausente (graceful handling)
 **Resultado:** ✅ PASS  
-**Salida:**
+**Detalle del escenario:**
+- Sin credenciales en process.env
+- Archivo `.env.local` no existe (loadEnv captura ENOENT)
+- Aserciones esperadas: todas las credenciales ausentes, sin crash
+
+**Ejecución:**
 ```
-✅ Test 2: Environment Variable Precedence (process.env > .env.local)
-----
-❌ SERPAPI_API_KEY
-   From process.env: NO
-   From .env.local: NO
-   Final source: NOT SET
-
-❌ NEXT_PUBLIC_SUPABASE_URL
-   From process.env: NO
-   From .env.local: NO
-   Final source: NOT SET
-
-❌ NEXT_PUBLIC_SUPABASE_ANON_KEY
-   From process.env: NO
-   From .env.local: NO
-   Final source: NOT SET
-
-✅ Test 3: Validation Logic
-----
-Supabase ready: ❌ NO
-SerpAPI ready: ❌ NO
-
-❌ Some credentials are missing:
-   Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
-   Please set SERPAPI_API_KEY
+Test: Scenario 5: .env.local file absent (loadEnv handles gracefully)
+Supabase URL: ❌ NO
+Supabase Key: ❌ NO
+SerpAPI Key: ❌ NO
+✅ ASSERTION PASSED: All credentials correctly missing
 ```
-**Conclusión:** Script detecta ausencia de todas las credenciales (Supabase + SerpAPI) de forma controlada
+
+#### 📊 Resumen de test-env-scenarios.mjs
+```
+Test Summary
+Passed: 5/5
+✅ All scenarios passed!
+```
+
+---
+
+### Conjunto 3: Validación de que no se exponen secretos
+
+#### ✅ Prueba 3.1: test-env-loading.mjs NO imprime valores de variables
+**Resultado:** ✅ PASS  
+**Verificación:** El script solo imprime NOMBRES de variables, nunca sus valores (completos o parciales)  
+**Conclusión:** Seguro para usar en logs/CI sin exposición de secretos
 
 ---
 
@@ -161,12 +186,26 @@ SerpAPI ready: ❌ NO
   - Indica ambas opciones de configuración (process.env y .env.local)
 - Línea 74: Inicialización del cliente: `const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);`
 
-### Archivo: `test-env-loading.mjs` (NUEVO)
-- Script de prueba completo que valida carga de todas las credenciales sin hacer llamadas reales
+### Archivo: `test-env-loading.mjs` (MEJORADO)
+- Script que valida carga actual de credenciales sin hacer llamadas reales
+- **SEGURIDAD:** NO imprime ningún valor de variables (solo nombres)
 - Prueba 1: Detección de `.env.local`
 - Prueba 2: Precedencia (process.env > .env.local)
 - Prueba 3: Validación de todas las credenciales (Supabase URL, Supabase Key, SerpAPI Key)
 - Exit code 0 si todo está bien, 1 si falta algo
+
+### Archivo: `test-env-scenarios.mjs` (NUEVO)
+- **Script de prueba REAL** con aserciones y valores ficticios
+- 5 escenarios aislados completamente independientes:
+  1. Solo process.env (sin .env.local)
+  2. Solo .env.local (sin process.env)
+  3. Ambas fuentes (verifica precedencia de process.env)
+  4. Falta todo (modo error)
+  5. Archivo .env.local ausente (verifica graceful handling)
+- Cada escenario usa valores ficticios, NO secretos reales
+- Aserciones que verifican el resultado esperado en cada caso
+- Exit code 0 si todos los 5 escenarios pasan, 1 si alguno falla
+- **Resultado:** 5/5 escenarios PASS (ejecutado 2026-10-29)
 
 ---
 
@@ -185,11 +224,25 @@ SerpAPI ready: ❌ NO
 
 ## Conclusión
 
+**Estado:** ✅ Corregido según revisión de ChatGPT
+
 El script ahora:
 1. ✅ Carga variables desde ambas fuentes (process.env y .env.local)
 2. ✅ Maneja de forma segura la ausencia de archivos y variables
-3. ✅ Valida antes de ejecutar cualquier operación
-4. ✅ No expone secretos en logs o mensajes
-5. ✅ Está listo para segunda revisión de ChatGPT
+3. ✅ Valida todas las credenciales (Supabase + SerpAPI) antes de ejecutar
+4. ✅ No expone secretos en logs, output ni mensajes
+5. ✅ Incluye pruebas REALES con aserciones sobre 5 escenarios completos
+6. ✅ Pruebas usan valores ficticios, nunca exponen secretos reales
 
-**Próximo paso:** Esperar aprobación de ChatGPT para fusión en `main`.
+### Pruebas ejecutadas y resultados verificados
+
+| Verificación | Resultado | Detalles |
+|--------------|-----------|----------|
+| Sintaxis (node --check) | ✅ PASS | Sin errores |
+| .gitignore (git check-ignore) | ✅ PASS | credentials.json ignorado en línea 44 |
+| test-env-scenarios.mjs | ✅ PASS | 5/5 escenarios con aserciones pasadas |
+| ESLint (Vercel) | ✅ PASS | Ejecutado en commit edad624 |
+| Build (Vercel) | ✅ PASS | Ejecutado en commit edad624 |
+| Exposición de secretos | ✅ SAFE | Scripts no imprimen valores |
+
+**Próximo paso:** Disponible para tercera revisión de ChatGPT/Codex.

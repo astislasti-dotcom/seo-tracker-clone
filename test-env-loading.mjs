@@ -45,9 +45,8 @@ console.log('-'.repeat(60));
 if (Object.keys(env).length > 0) {
   console.log(`Found ${Object.keys(env).length} variables in .env.local:`);
   Object.keys(env).forEach(key => {
-    const value = env[key];
-    const masked = value.length > 10 ? value.substring(0, 5) + '...' : value;
-    console.log(`  • ${key}: ${masked}`);
+    // Only show variable names, not values (to avoid exposing secrets)
+    console.log(`  • ${key}`);
   });
 } else {
   console.log('No .env.local file or file is empty');
@@ -83,6 +82,7 @@ testVars.forEach(varName => {
   console.log(`   From process.env: ${fromProcess ? 'YES' : 'NO'}`);
   console.log(`   From .env.local: ${fromEnvLocal ? 'YES' : 'NO'}`);
   console.log(`   Final source: ${results[varName].source}`);
+  // NOTE: NOT printing any secret values, even masked or partial
 
   if (!final) {
     allPresent = false;
