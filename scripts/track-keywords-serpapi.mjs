@@ -26,9 +26,17 @@ const env = loadEnv(envPath);
 
 console.log('🔐 Supabase URL:', env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Loaded' : '❌ Missing');
 console.log('🔑 Supabase Key:', env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Loaded' : '❌ Missing');
-console.log('🔍 SerpAPI Key:', process.env.SERPAPI_KEY ? '✅ Loaded' : '❌ Missing (use env var)');
+console.log('🔍 SerpAPI Key:', process.env.SERPAPI_API_KEY ? '✅ Loaded' : '❌ Missing (use SERPAPI_API_KEY env var)');
 
-const SERPAPI_KEY = '394168ca7463b29536594fc9f47b7a822a4db657e5426b1acc89f994dfe7e2f1';
+// Load SerpAPI key from environment variable
+const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
+
+// Exit early if SerpAPI key is missing
+if (!SERPAPI_KEY) {
+  console.error('❌ Error: SERPAPI_API_KEY environment variable is not set.');
+  console.error('Please set SERPAPI_API_KEY in your .env.local or system environment.');
+  process.exit(1);
+}
 
 const supabase = createClient(
   env.NEXT_PUBLIC_SUPABASE_URL,
