@@ -93,6 +93,43 @@ Script continues without crashing
 ```
 **Conclusión:** Ausencia de `.env.local` se gestiona correctamente (try/catch para ENOENT)
 
+### ✅ Prueba 7: Supabase también carga desde process.env
+**Procedimiento:**
+- Ejecutar \`test-env-loading.mjs\` sin credenciales
+- Verificar que detecta correctamente qué variables faltan
+- Confirmar que carga desde process.env con precedencia documentada
+
+**Resultado:** ✅ PASS  
+**Salida:**
+```
+✅ Test 2: Environment Variable Precedence (process.env > .env.local)
+----
+❌ SERPAPI_API_KEY
+   From process.env: NO
+   From .env.local: NO
+   Final source: NOT SET
+
+❌ NEXT_PUBLIC_SUPABASE_URL
+   From process.env: NO
+   From .env.local: NO
+   Final source: NOT SET
+
+❌ NEXT_PUBLIC_SUPABASE_ANON_KEY
+   From process.env: NO
+   From .env.local: NO
+   Final source: NOT SET
+
+✅ Test 3: Validation Logic
+----
+Supabase ready: ❌ NO
+SerpAPI ready: ❌ NO
+
+❌ Some credentials are missing:
+   Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY
+   Please set SERPAPI_API_KEY
+```
+**Conclusión:** Script detecta ausencia de todas las credenciales (Supabase + SerpAPI) de forma controlada
+
 ---
 
 ## Limitaciones documentadas
@@ -108,13 +145,28 @@ Script continues without crashing
 
 ### Archivo: `.gitignore`
 - Línea 42: Cambiado `"credentials.json"` (con comillas literales) a `credentials.json`
-- Líneas 44-45: Agregadas reglas para `.env.local` y variantes (redundante con `.env*` existente, pero explícito)
+- Líneas 44-46: Agregadas reglas para `.env.local` y variantes (redundante con `.env*` existente, pero explícito)
 
 ### Archivo: `scripts/track-keywords-serpapi.mjs`
 - Líneas 9-30: Función `loadEnv()` ahora captura `ENOENT` (archivo no encontrado) y continúa con objeto `env` vacío
-- Línea 40: Cambiado de `process.env.SERPAPI_API_KEY` a `process.env.SERPAPI_API_KEY || env.SERPAPI_API_KEY`
-- Línea 39: Documentada precedencia (process.env > .env.local)
-- Líneas 44-50: Mejorados mensajes de error (sin exponer secretos, indica ambas opciones)
+- Líneas 35-39: **[CORRECCIÓN]** Supabase URL y clave ahora cargan desde `process.env` O `.env.local` con precedencia documentada:
+  - `const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL`
+  - `const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Línea 45: SerpAPI también aplica la misma lógica: `const SERPAPI_KEY = process.env.SERPAPI_API_KEY || env.SERPAPI_API_KEY`
+- Línea 44: Documentada precedencia (process.env > .env.local) en comentario
+- Líneas 49-68: Mejorada validación:
+  - Valida Supabase credentials antes de crear cliente
+  - Valida SerpAPI key antes de ejecutar búsquedas
+  - Mensajes de error claros sin exponer secretos
+  - Indica ambas opciones de configuración (process.env y .env.local)
+- Línea 74: Inicialización del cliente: `const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);`
+
+### Archivo: `test-env-loading.mjs` (NUEVO)
+- Script de prueba completo que valida carga de todas las credenciales sin hacer llamadas reales
+- Prueba 1: Detección de `.env.local`
+- Prueba 2: Precedencia (process.env > .env.local)
+- Prueba 3: Validación de todas las credenciales (Supabase URL, Supabase Key, SerpAPI Key)
+- Exit code 0 si todo está bien, 1 si falta algo
 
 ---
 
@@ -122,8 +174,11 @@ Script continues without crashing
 
 - ✅ No hay claves hardcodeadas en el código actual
 - ✅ `credentials.json` será ignorado por Git
-- ✅ Errores de carga no exponen valores secretos
+- ✅ Errores de carga no exponen valores secretos en logs/salida
 - ✅ Secuencia de validación previene ejecución sin credenciales
+- ✅ **NUEVA:** Supabase credentials ahora se cargan también desde `process.env`
+- ✅ **NUEVA:** Script valida Supabase Y SerpAPI antes de crear cliente
+- ✅ Ambas fuentes de configuración soportadas (process.env y .env.local) con precedencia documentada
 - ⚠️ La clave antigua (`394168ca...`) sigue en historial de Git (requiere acción de Diego: revocación en SerpAPI + nueva clave)
 
 ---

@@ -32,8 +32,13 @@ function loadEnv(filePath) {
 const envPath = path.join(__dirname, '..', '.env.local');
 const env = loadEnv(envPath);
 
-console.log('🔐 Supabase URL:', env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Loaded' : '❌ Missing');
-console.log('🔑 Supabase Key:', env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Loaded' : '❌ Missing');
+// Load Supabase credentials from environment or .env.local
+// Precedence: process.env > .env.local
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+console.log('🔐 Supabase URL:', SUPABASE_URL ? '✅ Loaded' : '❌ Missing');
+console.log('🔑 Supabase Key:', SUPABASE_ANON_KEY ? '✅ Loaded' : '❌ Missing');
 
 // Load SerpAPI key from environment or .env.local
 // Precedence: process.env > .env.local
@@ -41,7 +46,15 @@ const SERPAPI_KEY = process.env.SERPAPI_API_KEY || env.SERPAPI_API_KEY;
 
 console.log('🔍 SerpAPI Key:', SERPAPI_KEY ? '✅ Loaded' : '❌ Missing (set SERPAPI_API_KEY in .env.local or environment)');
 
-// Exit early if SerpAPI key is missing
+// Exit early if required credentials are missing
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('❌ Error: Supabase credentials are not set.');
+  console.error('Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in:');
+  console.error('  - System environment variables, or');
+  console.error('  - .env.local file (NEXT_PUBLIC_SUPABASE_URL=..., NEXT_PUBLIC_SUPABASE_ANON_KEY=...)');
+  process.exit(1);
+}
+
 if (!SERPAPI_KEY) {
   console.error('❌ Error: SERPAPI_API_KEY is not set.');
   console.error('Please set SERPAPI_API_KEY in:');
@@ -50,10 +63,7 @@ if (!SERPAPI_KEY) {
   process.exit(1);
 }
 
-const supabase = createClient(
-  env.NEXT_PUBLIC_SUPABASE_URL,
-  env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Load keywords
 const keywordsPath = path.join(__dirname, '..', 'public', 'keywords.json');
