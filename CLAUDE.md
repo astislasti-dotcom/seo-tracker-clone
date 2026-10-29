@@ -5,6 +5,12 @@
 > Propietario de producto: usuario responsable del proyecto. Ningún asistente sustituye su aprobación.
 > Estado: guía inicial de colaboración. Las funcionalidades propuestas no deben darse por implementadas.
 
+## Modo lectura por defecto (bloqueo de escritura)
+
+**Antes de un encargo explícito de implementación, trabajar únicamente en modo lectura.** Leer el repositorio, consultar ramas/commits, issues y PR, y elaborar análisis **no autoriza** a crear o recrear ramas, editar archivos, hacer commits, `push`, abrir PR ni sincronizar trabajos anteriores. **No ejecutar ningún comando de escritura en GitHub, aunque una herramienta lo sugiera automáticamente.** Si el entorno (p. ej., una sesión de Claude Code) crea/publica ramas automáticamente, **no usarlo para una simple consulta**: utilizar el chat con conector GitHub de solo lectura o detenerse y explicarlo al usuario. No reactivar una rama que haya sido restablecida o eliminada por orden del usuario.
+
+**Autorización de escritura:** solo cuando el usuario encargue de forma expresa implementar un cambio, después de verificar el trabajo existente y acordar alcance, rama, responsable y PR. Una petición de leer documentación, confirmar acceso o explicar el procedimiento **nunca** implica permiso de escritura.
+
 ## Lectura obligatoria antes de actuar
 
 **Consultar primero [docs/PROTOCOLO_COLABORACION.md](docs/PROTOCOLO_COLABORACION.md).** Antes de crear una rama, fichero o PR hay que revisar los trabajos abiertos, los PR (incluidos los borradores) y las ramas de los dos motores. Si ya existe la tarea, se coordina en el issue/PR existente y **no se duplica**. Los cambios en `main` y la publicación requieren aprobación expresa del responsable del proyecto.
