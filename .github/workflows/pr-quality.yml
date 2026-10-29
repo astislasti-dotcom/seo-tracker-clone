@@ -1,0 +1,45 @@
+# Fase 1: comprobaciones tecnicas. Sin IA, sin tokens de terceros y sin escritura en GitHub.
+name: PR - calidad basica
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-quality-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    name: ESLint y sintaxis
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Obtener codigo sin guardar credenciales
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Instalar dependencias (sin auditoria externa)
+        run: npm ci --no-audit --no-fund
+
+      - name: Analisis estatico ESLint
+        run: npm run lint
+
+      - name: Sintaxis de scripts locales
+        run: |
+          node --check scripts/track-keywords-serpapi.mjs
+          node --check scripts/track-keywords-gsc.mjs
+
+# No se ejecuta npm run build: la app necesita configuracion externa y Vercel ya gestiona
+# su propia comprobacion de despliegue. No se hacen llamadas a SerpAPI, GSC o Supabase.
