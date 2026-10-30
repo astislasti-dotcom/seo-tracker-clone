@@ -1,24 +1,32 @@
 #!/usr/bin/env node
 
 /**
- * Real environment variable scenario tests
- * Tests 5 scenarios with isolated, fictional credentials
- * Uses aserciones to validate each scenario
+ * Scenario tests for credential resolution (process.env > .env.local).
+ *
+ * - Uses fictional values only. No calls to SerpAPI or Supabase.
+ * - Each scenario writes its .env file inside a unique temp directory
+ *   created with fs.mkdtempSync. The real .env.local is never touched.
+ * - Assertions compare the resolved VALUE of each variable with the
+ *   expected value, so a precedence bug fails the test.
  */
 
-import * as fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const VARS = {
+  url: 'NEXT_PUBLIC_SUPABASE_URL',
+  anon: 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+  serp: 'SERPAPI_API_KEY',
+};
 
-// Utility: replicate the loadEnv function from track-keywords-serpapi.mjs
-function loadEnv(filePath) {
+// Same parser semantics as scripts/track-keywords-serpapi.mjs loadEnv().
+function loadEnvFile(filePath) {
   const env = {};
   try {
     const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split('\n');
-    for (const line of lines) {
+    for (const line of content.split('\n')) {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith('#')) {
         const [key, ...valueParts] = trimmed.split('=');
@@ -26,152 +34,109 @@ function loadEnv(filePath) {
       }
     }
   } catch (error) {
-    if (error.code !== 'ENOENT') {
-      throw error;
-    }
+    if (error.code !== 'ENOENT') throw error;
   }
   return env;
 }
 
-// Scenario validator function
-function testScenario(name, processEnv, envLocalContent, expectedResult) {
-  console.log(`\n${'='.repeat(70)}`);
-  console.log(`Test: ${name}`);
-  console.log('='.repeat(70));
-
-  // Create temporary .env.local for this test
-  const tempEnvPath = path.join(__dirname, '.env.local.test');
-  if (envLocalContent) {
-    fs.writeFileSync(tempEnvPath, envLocalContent, 'utf8');
-  }
-
-  try {
-    // Load env from temporary file
-    const env = loadEnv(tempEnvPath);
-
-    // Test the resolution logic (mimicking track-keywords-serpapi.mjs)
-    const SUPABASE_URL = processEnv.NEXT_PUBLIC_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = processEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const SERPAPI_KEY = processEnv.SERPAPI_API_KEY || env.SERPAPI_API_KEY;
-
-    const supabaseOk = SUPABASE_URL && SUPABASE_ANON_KEY;
-    const serpapiOk = SERPAPI_KEY;
-    const allOk = supabaseOk && serpapiOk;
-
-    // Report results
-    console.log(`Supabase URL: ${SUPABASE_URL ? '✅ YES' : '❌ NO'}`);
-    console.log(`Supabase Key: ${SUPABASE_ANON_KEY ? '✅ YES' : '❌ NO'}`);
-    console.log(`SerpAPI Key: ${SERPAPI_KEY ? '✅ YES' : '❌ NO'}`);
-
-    // Assertion
-    if (expectedResult === 'PASS') {
-      if (allOk) {
-        console.log(`\n✅ ASSERTION PASSED: All credentials resolved as expected`);
-        return true;
-      } else {
-        console.log(`\n❌ ASSERTION FAILED: Expected all credentials but got missing values`);
-        return false;
-      }
-    } else if (expectedResult === 'FAIL_SUPABASE') {
-      if (!supabaseOk) {
-        console.log(`\n✅ ASSERTION PASSED: Supabase credentials correctly missing`);
-        return true;
-      } else {
-        console.log(`\n❌ ASSERTION FAILED: Expected Supabase to be missing`);
-        return false;
-      }
-    } else if (expectedResult === 'FAIL_SERPAPI') {
-      if (!serpapiOk) {
-        console.log(`\n✅ ASSERTION PASSED: SerpAPI key correctly missing`);
-        return true;
-      } else {
-        console.log(`\n❌ ASSERTION FAILED: Expected SerpAPI to be missing`);
-        return false;
-      }
-    } else if (expectedResult === 'FAIL_ALL') {
-      if (!allOk) {
-        console.log(`\n✅ ASSERTION PASSED: All credentials correctly missing`);
-        return true;
-      } else {
-        console.log(`\n❌ ASSERTION FAILED: Expected all credentials to be missing`);
-        return false;
-      }
-    }
-  } finally {
-    // Clean up
-    if (fs.existsSync(tempEnvPath)) {
-      fs.unlinkSync(tempEnvPath);
-    }
-  }
+// Same resolution rule as the script: process.env first, then .env.local.
+function resolve(processEnv, env) {
+  return {
+    url: processEnv[VARS.url] || env[VARS.url],
+    anon: processEnv[VARS.anon] || env[VARS.anon],
+    serp: processEnv[VARS.serp] || env[VARS.serp],
+  };
 }
 
-console.log('\n🧪 Environment Variable Scenario Tests');
-console.log('Using fictional credentials (no real secrets)\n');
+// fileContent: string -> file is written; null -> file is not created.
+function runScenario(tmpRoot, name, processEnv, fileContent) {
+  const dir = fs.mkdtempSync(path.join(tmpRoot, 'case-'));
+  const envPath = path.join(dir, '.env.local');
+  if (fileContent !== null) fs.writeFileSync(envPath, fileContent, 'utf8');
+  const env = loadEnvFile(envPath);
+  return { name, resolved: resolve(processEnv, env) };
+}
 
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'seo-tracker-env-'));
 const results = [];
 
-// Scenario 1: Only process.env (no .env.local file)
-results.push(testScenario(
-  'Scenario 1: Only process.env (no .env.local)',
-  {
-    NEXT_PUBLIC_SUPABASE_URL: 'https://fictional-supabase.supabase.co',
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'fictional_sb_anon_key_12345',
-    SERPAPI_API_KEY: 'fictional_serpapi_key_67890'
-  },
-  null, // No .env.local
-  'PASS'
-));
+try {
+  const FILE_VALUES = `${VARS.url}=https://file.example.invalid\n${VARS.anon}=file-anon-fixture\n${VARS.serp}=file-serp-fixture\n`;
+  const PROC_VALUES = {
+    [VARS.url]: 'https://proc.example.invalid',
+    [VARS.anon]: 'proc-anon-fixture',
+    [VARS.serp]: 'proc-serp-fixture',
+  };
 
-// Scenario 2: Only .env.local (no process.env)
-results.push(testScenario(
-  'Scenario 2: Only .env.local (no process.env)',
-  {}, // Empty process.env for this test
-  'NEXT_PUBLIC_SUPABASE_URL=https://fictional-supabase.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=fictional_sb_anon_key_12345\nSERPAPI_API_KEY=fictional_serpapi_key_67890\n',
-  'PASS'
-));
+  // 1. Only process.env (no .env.local file at all)
+  const s1 = runScenario(tmpRoot, 'S1 solo process.env (sin archivo)', PROC_VALUES, null);
+  results.push(() => {
+    assert.deepEqual(s1.resolved, {
+      url: 'https://proc.example.invalid',
+      anon: 'proc-anon-fixture',
+      serp: 'proc-serp-fixture',
+    });
+  });
 
-// Scenario 3: Both sources (process.env takes precedence)
-results.push(testScenario(
-  'Scenario 3: Both sources (process.env > .env.local)',
-  {
-    NEXT_PUBLIC_SUPABASE_URL: 'https://process-env-supabase.supabase.co',
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'process_env_sb_key',
-    SERPAPI_API_KEY: 'process_env_serpapi_key'
-  },
-  'NEXT_PUBLIC_SUPABASE_URL=https://env-local-supabase.supabase.co\nNEXT_PUBLIC_SUPABASE_ANON_KEY=env_local_sb_key\nSERPAPI_API_KEY=env_local_serpapi_key\n',
-  'PASS'
-));
+  // 2. Only .env.local (empty process.env)
+  const s2 = runScenario(tmpRoot, 'S2 solo .env.local', {}, FILE_VALUES);
+  results.push(() => {
+    assert.deepEqual(s2.resolved, {
+      url: 'https://file.example.invalid',
+      anon: 'file-anon-fixture',
+      serp: 'file-serp-fixture',
+    });
+  });
 
-// Scenario 4: Missing all credentials
-results.push(testScenario(
-  'Scenario 4: Missing all credentials',
-  {}, // No process.env
-  '', // Empty .env.local
-  'FAIL_ALL'
-));
+  // 3. Both sources: process.env must win for every variable
+  const s3 = runScenario(tmpRoot, 'S3 ambas fuentes (gana process.env)', PROC_VALUES, FILE_VALUES);
+  results.push(() => {
+    assert.equal(s3.resolved.url, 'https://proc.example.invalid');
+    assert.equal(s3.resolved.anon, 'proc-anon-fixture');
+    assert.equal(s3.resolved.serp, 'proc-serp-fixture');
+  });
 
-// Scenario 5: .env.local file absent (no process.env either)
-results.push(testScenario(
-  'Scenario 5: .env.local file absent (loadEnv handles gracefully)',
-  {}, // No process.env
-  null, // File doesn't exist - loadEnv should handle ENOENT
-  'FAIL_ALL'
-));
+  // 4. File exists but is empty; no process.env -> nothing resolves
+  const s4 = runScenario(tmpRoot, 'S4 archivo vacio, sin process.env', {}, '');
+  results.push(() => {
+    assert.deepEqual(s4.resolved, { url: undefined, anon: undefined, serp: undefined });
+  });
 
-// Summary
-console.log(`\n${'='.repeat(70)}`);
-console.log('📊 Test Summary');
-console.log('='.repeat(70));
+  // 5. File absent (ENOENT handled), no process.env -> nothing resolves, no throw
+  const s5 = runScenario(tmpRoot, 'S5 archivo ausente, sin process.env', {}, null);
+  results.push(() => {
+    assert.deepEqual(s5.resolved, { url: undefined, anon: undefined, serp: undefined });
+  });
 
-const passed = results.filter(r => r).length;
-const total = results.length;
+  // 6. Partial: process.env supplies only SERPAPI, file supplies the Supabase pair
+  const s6 = runScenario(
+    tmpRoot,
+    'S6 mezcla parcial',
+    { [VARS.serp]: 'proc-serp-fixture' },
+    `${VARS.url}=https://file.example.invalid\n${VARS.anon}=file-anon-fixture\n`
+  );
+  results.push(() => {
+    assert.equal(s6.resolved.serp, 'proc-serp-fixture');
+    assert.equal(s6.resolved.url, 'https://file.example.invalid');
+    assert.equal(s6.resolved.anon, 'file-anon-fixture');
+  });
 
-console.log(`\nPassed: ${passed}/${total}`);
+  const names = [s1, s2, s3, s4, s5, s6].map((s) => s.name);
+  let passed = 0;
+  results.forEach((check, i) => {
+    try {
+      check();
+      passed++;
+      console.log(`PASS  ${names[i]}`);
+    } catch (err) {
+      console.log(`FAIL  ${names[i]}`);
+      console.log(`      ${err.message.split('\n').slice(0, 6).join('\n      ')}`);
+    }
+  });
 
-if (passed === total) {
-  console.log('✅ All scenarios passed!');
-  process.exit(0);
-} else {
-  console.log(`❌ ${total - passed} scenario(s) failed`);
-  process.exit(1);
+  console.log(`\nResultado: ${passed}/${results.length}`);
+  process.exitCode = passed === results.length ? 0 : 1;
+} finally {
+  // Remove only the unique temp directory created by this run.
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
