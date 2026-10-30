@@ -2,84 +2,92 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { buildDashboardModel, DISPLAY } from '../../lib/keywords/measurements.mjs';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
+const EMPTY_MODEL = {
+  status: 'loading',
+  keywords: [],
+  counts: { total: 0, ranked: 0, top10: 0, notFound: 0, unverified: 0 },
+  averagePosition: null,
+  lastMeasuredAt: null,
+};
+
+function formatDate(iso) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString('es-ES');
+}
+
+function lastMeasurementLabel(model) {
+  const formatted = model.lastMeasuredAt ? formatDate(model.lastMeasuredAt) : null;
+  return formatted ? `Última medición verificada: ${formatted}` : 'Sin medición verificada';
+}
+
+function positionText(kw) {
+  if (kw.state === DISPLAY.RANKED) return `#${kw.position}`;
+  if (kw.state === DISPLAY.NOT_FOUND) return 'No aparece';
+  return 'Sin medición verificada';
+}
+
+const STATUS_MESSAGES = {
+  catalog_error: 'No se pudo cargar el catálogo de keywords. No se muestran datos.',
+  empty: 'El catálogo de keywords está vacío.',
+  measurements_error: 'No se pudieron cargar las mediciones. Las posiciones no se muestran hasta recuperar datos verificados.',
+};
+
 export default function Dashboard() {
-  const [keywords, setKeywords] = useState([]);
-  const [stats, setStats] = useState({
-    p1Count: 0,
-    avgPosition: 0,
-    totalKeywords: 0,
-  });
+  const [model, setModel] = useState(EMPTY_MODEL);
   const [activeTab, setActiveTab] = useState('overview');
   const [activeDomain, setActiveDomain] = useState('all');
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadDashboardData();
+    let cancelled = false;
+
+    const load = async () => {
+      let catalogRaw;
+      try {
+        const response = await fetch('/keywords.json');
+        if (!response.ok) throw new Error('catalog_http_error');
+        catalogRaw = await response.json();
+      } catch {
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null }));
+        return;
+      }
+
+      // No row limit: every observation is fetched and attributed by logical key.
+      // Legacy rows without a keyword_key cannot be attributed and show as unverified.
+      let next;
+      try {
+        const { data: rows, error } = await supabase.from('keyword_tracking').select('*');
+        if (error) console.error('keyword_tracking read failed');
+        next = buildDashboardModel({ catalogRaw, rows: rows ?? [], error: error ?? null });
+      } catch {
+        next = buildDashboardModel({ catalogRaw, rows: [], error: new Error('read_failed') });
+      }
+      if (!cancelled) setModel(next);
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-
-      // Get latest tracking data
-      const { data: trackingData, error } = await supabase
-        .from('keyword_tracking')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(31); // Assuming 31 keywords
-
-      if (error) throw error;
-
-      // Get keywords data
-      const keywordResponse = await fetch('/keywords.json');
-      const keywordsList = await keywordResponse.json();
-
-      // Merge tracking data with keyword data
-      const mergedData = keywordsList.map(kw => {
-        const latestTracking = trackingData?.find(
-          t => t.keyword_id === kw.id && t.domain === kw.domain
-        );
-        return {
-          ...kw,
-          position: latestTracking?.position || 0,
-          timestamp: latestTracking?.timestamp,
-        };
-      });
-
-      setKeywords(mergedData);
-
-      // Calculate stats
-      const p1 = mergedData.filter(k => k.position > 0 && k.position <= 10).length;
-      const positions = mergedData
-        .filter(k => k.position > 0)
-        .map(k => k.position);
-      const avg =
-        positions.length > 0
-          ? (positions.reduce((a, b) => a + b, 0) / positions.length).toFixed(1)
-          : 0;
-
-      setStats({
-        p1Count: p1,
-        avgPosition: avg,
-        totalKeywords: mergedData.length,
-      });
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loading = model.status === 'loading';
+  const keywords = model.keywords;
+  const counts = model.counts;
 
   const filteredKeywords =
     activeDomain === 'all'
       ? keywords
       : keywords.filter(k => k.domain === activeDomain);
+
+  const showTable = !loading && (model.status === 'ok' || model.status === 'measurements_error');
+  const statusMessage = STATUS_MESSAGES[model.status];
 
   return (
     <div style={{ fontFamily: "'Open Sans', sans-serif", background: '#f5f5f5', minHeight: '100vh' }}>
@@ -139,7 +147,7 @@ export default function Dashboard() {
             📋 Reports
           </div>
           <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.15)', fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>
-            Data actualizada: hoy a las 06:00
+            {loading ? 'Cargando mediciones…' : lastMeasurementLabel(model)}
           </div>
         </div>
 
@@ -151,7 +159,7 @@ export default function Dashboard() {
               Control SEO Integral
             </h1>
             <p style={{ color: '#888', fontSize: '12px', margin: '4px 0 0 0' }}>
-              Última actualización: hoy
+              {loading ? 'Cargando mediciones…' : lastMeasurementLabel(model)}
             </p>
           </div>
 
@@ -181,30 +189,36 @@ export default function Dashboard() {
             ))}
           </div>
 
+          {statusMessage && (
+            <div role="alert" style={{ background: '#fff4e5', border: '1px solid #f0c36d', color: '#7a4d00', padding: '12px 16px', borderRadius: '8px', marginBottom: '24px', fontSize: '13px' }}>
+              {statusMessage}
+            </div>
+          )}
+
           {activeTab === 'overview' && (
             <>
               {/* KPI Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '24px' }}>
                 <div style={{ background: 'white', padding: '20px', borderRadius: '8px', borderLeft: '3px solid #33c4b4' }}>
                   <div style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>
-                    Keywords P1-P10
+                    Top 10 verificadas
                   </div>
                   <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#004e5a' }}>
-                    {stats.p1Count}
+                    {loading ? '—' : counts.top10}
                   </div>
-                  <div style={{ fontSize: '12px', marginTop: '8px', color: '#27ae60' }}>
-                    ↑ Rastreados
+                  <div style={{ fontSize: '12px', marginTop: '8px', color: '#666' }}>
+                    {loading ? 'Cargando…' : `${counts.ranked} con posición verificada de ${counts.total}`}
                   </div>
                 </div>
                 <div style={{ background: 'white', padding: '20px', borderRadius: '8px', borderLeft: '3px solid #33c4b4' }}>
                   <div style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>
-                    Posición Media
+                    Posición media verificada
                   </div>
                   <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#004e5a' }}>
-                    {stats.avgPosition}
+                    {loading || model.averagePosition === null ? '—' : model.averagePosition.toFixed(1)}
                   </div>
                   <div style={{ fontSize: '12px', marginTop: '8px', color: '#666' }}>
-                    De {stats.totalKeywords} keywords
+                    {loading ? 'Cargando…' : `${counts.notFound} sin aparecer · ${counts.unverified} sin medición verificada`}
                   </div>
                 </div>
               </div>
@@ -234,11 +248,10 @@ export default function Dashboard() {
               {/* Keywords Table */}
               <div style={{ background: 'white', padding: '24px', borderRadius: '8px' }}>
                 <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: '16px', color: '#004e5a', marginBottom: '16px', fontWeight: 700 }}>
-                  Top Keywords
+                  Keywords
                 </h2>
-                {loading ? (
-                  <p>Cargando datos...</p>
-                ) : (
+                {loading && <p>Cargando datos...</p>}
+                {showTable && (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
@@ -254,8 +267,8 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredKeywords.slice(0, 10).map(kw => (
-                        <tr key={kw.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      {filteredKeywords.map(kw => (
+                        <tr key={kw.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
                           <td style={{ padding: '12px', fontSize: '13px' }}>
                             <strong>{kw.keyword}</strong>
                           </td>
@@ -274,8 +287,8 @@ export default function Dashboard() {
                               {kw.domain === '3av.events' ? '3AV' : 'ASTI'}
                             </span>
                           </td>
-                          <td style={{ padding: '12px', fontSize: '13px', color: kw.position > 0 ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
-                            {kw.position > 0 ? `#${kw.position}` : 'No ranking'}
+                          <td style={{ padding: '12px', fontSize: '13px', color: kw.state === DISPLAY.RANKED ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
+                            {positionText(kw)}
                           </td>
                         </tr>
                       ))}
@@ -294,28 +307,7 @@ export default function Dashboard() {
               <p style={{ color: '#666', marginBottom: '16px' }}>
                 Total keywords: {keywords.filter(k => k.domain === '3av.events').length}
               </p>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                      Keyword
-                    </th>
-                    <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                      Posición
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {keywords.filter(k => k.domain === '3av.events').map(kw => (
-                    <tr key={kw.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', fontSize: '13px' }}>{kw.keyword}</td>
-                      <td style={{ padding: '12px', fontSize: '13px', color: kw.position > 0 ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
-                        {kw.position > 0 ? `#${kw.position}` : 'No ranking'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {showTable && <DomainTable rows={keywords.filter(k => k.domain === '3av.events')} />}
             </div>
           )}
 
@@ -327,28 +319,7 @@ export default function Dashboard() {
               <p style={{ color: '#666', marginBottom: '16px' }}>
                 Total keywords: {keywords.filter(k => k.domain === 'astisl.es').length}
               </p>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                      Keyword
-                    </th>
-                    <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                      Posición
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {keywords.filter(k => k.domain === 'astisl.es').map(kw => (
-                    <tr key={kw.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', fontSize: '13px' }}>{kw.keyword}</td>
-                      <td style={{ padding: '12px', fontSize: '13px', color: kw.position > 0 ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
-                        {kw.position > 0 ? `#${kw.position}` : 'No ranking'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {showTable && <DomainTable rows={keywords.filter(k => k.domain === 'astisl.es')} />}
             </div>
           )}
 
@@ -365,5 +336,32 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+function DomainTable({ rows }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr>
+          <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
+            Keyword
+          </th>
+          <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
+            Posición
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(kw => (
+          <tr key={kw.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
+            <td style={{ padding: '12px', fontSize: '13px' }}>{kw.keyword}</td>
+            <td style={{ padding: '12px', fontSize: '13px', color: kw.state === DISPLAY.RANKED ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
+              {positionText(kw)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
