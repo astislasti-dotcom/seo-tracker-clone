@@ -42,6 +42,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'Preflight failed: unexpected column-level privileges';
   END IF;
+  -- has_table_privilege comprueba GRANT, no la autorizacion RLS efectiva.
+  -- Esta migracion NO crea una politica INSERT para service_role.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'service_role' AND rolbypassrls
+  ) THEN
+    RAISE EXCEPTION 'Preflight failed: service_role must bypass RLS';
+  END IF;
 END;
 $preflight$;
 
@@ -94,6 +102,14 @@ BEGIN
 
   IF NOT has_table_privilege('service_role', 'public.keyword_tracking', 'INSERT') THEN
     RAISE EXCEPTION 'Postflight failed: service_role lost INSERT';
+  END IF;
+
+  -- A positive GRANT is insufficient if RLS would still block the role.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_roles
+    WHERE rolname = 'service_role' AND rolbypassrls
+  ) THEN
+    RAISE EXCEPTION 'Postflight failed: service_role does not bypass RLS';
   END IF;
 END;
 $postflight$;
