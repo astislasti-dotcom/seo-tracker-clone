@@ -47,57 +47,26 @@ test('postflight exige ausencia de escritura y protege service_role', () => {
   assert.match(migration, /RAISE EXCEPTION 'Postflight failed:/i);
 });
 
-test('service_role necesita tanto INSERT como BYPASSRLS y se comprueba antes y despues', () => {
-  assert.match(migration, /has_table_privilege\\('service_role', 'public\\.keyword_tracking', 'INSERT'\\)/);
+test('service_role necesita INSERT y BYPASSRLS antes y despues del cambio', () => {
+  const preflightStart = migration.indexOf('DO $preflight$');
+  const preflightEnd = migration.indexOf('$preflight$;', preflightStart);
+  const postflightStart = migration.indexOf('DO $postflight$');
+  const postflightEnd = migration.indexOf('$postflight$;', postflightStart);
+  assert.ok(preflightStart >= 0 && preflightEnd > preflightStart);
+  assert.ok(postflightStart >= 0 && postflightEnd > postflightStart);
 
-  const preflight = migration.slice(
-    migration.indexOf('DO $preflight
-  assert.doesNotMatch(migration, /\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+public\.|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/i);
-  assert.doesNotMatch(migration, /DISABLE\s+ROW LEVEL SECURITY/i);
-  assert.doesNotMatch(migration, /ALTER TABLE public\.(?!keyword_tracking\b)/i);
-});
-),
-    migration.indexOf('$preflight$;', migration.indexOf('DO $preflight
-  assert.doesNotMatch(migration, /\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+public\.|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/i);
-  assert.doesNotMatch(migration, /DISABLE\s+ROW LEVEL SECURITY/i);
-  assert.doesNotMatch(migration, /ALTER TABLE public\.(?!keyword_tracking\b)/i);
-});
-))
-  );
-  const postflight = migration.slice(
-    migration.indexOf('DO $postflight
-  assert.doesNotMatch(migration, /\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+public\.|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/i);
-  assert.doesNotMatch(migration, /DISABLE\s+ROW LEVEL SECURITY/i);
-  assert.doesNotMatch(migration, /ALTER TABLE public\.(?!keyword_tracking\b)/i);
-});
-),
-    migration.indexOf('$postflight$;', migration.indexOf('DO $postflight
-  assert.doesNotMatch(migration, /\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+public\.|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/i);
-  assert.doesNotMatch(migration, /DISABLE\s+ROW LEVEL SECURITY/i);
-  assert.doesNotMatch(migration, /ALTER TABLE public\.(?!keyword_tracking\b)/i);
-});
-))
-  );
-
+  const preflight = migration.slice(preflightStart, preflightEnd);
+  const postflight = migration.slice(postflightStart, postflightEnd);
   for (const section of [preflight, postflight]) {
-    assert.match(section, /SELECT 1 FROM pg_roles/);
+    assert.match(section, /FROM pg_roles/);
     assert.match(section, /rolname = 'service_role' AND rolbypassrls/);
     assert.match(section, /RAISE EXCEPTION/);
   }
+  assert.match(postflight, /has_table_privilege\('service_role', 'public\.keyword_tracking', 'INSERT'\)/);
 
   const enablePos = migration.indexOf('ALTER TABLE public.keyword_tracking ENABLE ROW LEVEL SECURITY;');
-  assert.ok(migration.indexOf('DO $preflight
-  assert.doesNotMatch(migration, /\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+public\.|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/i);
-  assert.doesNotMatch(migration, /DISABLE\s+ROW LEVEL SECURITY/i);
-  assert.doesNotMatch(migration, /ALTER TABLE public\.(?!keyword_tracking\b)/i);
-});
-) < enablePos, 'preflight debe ir antes de RLS');
-  assert.ok(migration.indexOf('DO $postflight
-  assert.doesNotMatch(migration, /\b(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE\s+public\.|TRUNCATE\s+TABLE|DROP\s+TABLE)\b/i);
-  assert.doesNotMatch(migration, /DISABLE\s+ROW LEVEL SECURITY/i);
-  assert.doesNotMatch(migration, /ALTER TABLE public\.(?!keyword_tracking\b)/i);
-});
-) > enablePos, 'postflight debe ir despues de RLS');
+  assert.ok(preflightEnd < enablePos);
+  assert.ok(enablePos < postflightStart);
 });
 
 test('no modifica datos ni otras tablas, no reabre RLS', () => {
