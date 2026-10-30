@@ -19,7 +19,7 @@ Tarea: [Issue #8](https://github.com/astislasti-dotcom/seo-tracker-clone/issues/
 | RLS | **Desactivado** |
 | Políticas | Ninguna |
 | Permisos `anon` y `authenticated` | SELECT, INSERT, UPDATE, DELETE (y privilegios adicionales) |
-| `service_role` | Puede insertar; no cambiar su concesión |
+| `service_role` | Tiene privilegio INSERT **y `BYPASSRLS = true`**, confirmados en consulta de solo lectura el 30/10/2026; no cambiar la concesión |
 | Cliente | `app/dashboard/page.jsx` hace `.from('keyword_tracking').select('*')` directamente desde el navegador con `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
 | Otros hallazgos | `public.rls_auto_enable()` es SECURITY DEFINER ejecutable desde roles cliente; asunto **separado** |
 
@@ -30,18 +30,28 @@ El esquema y el dashboard tienen otros problemas funcionales (IDs JSON 1–31 fr
 1. Una única transacción activa RLS, revoca **todos** los privilegios heredables de `PUBLIC` y directos de `anon`/`authenticated` sobre esta tabla.
 2. Restaura exclusivamente `SELECT` para `anon` y `authenticated`.
 3. Crea política de lectura `USING (true)` **temporal** para conservar la carga actual del dashboard.
-4. Una comprobación SQL dentro de la transacción verifica que cada rol cliente puede leer pero no puede escribir, truncar, referenciar o crear triggers, y que `service_role` puede seguir insertando.
+4. Una comprobación SQL dentro de la transacción verifica que cada rol cliente puede leer pero no puede escribir, truncar, referenciar o crear triggers, y que `service_role` conserva `INSERT` y el atributo `BYPASSRLS`.
 5. Las precondiciones abortan si RLS, políticas o privilegios por columna ya cambiaron desde la auditoría. Un error revierte la transacción completa.
 
 **Importante: SELECT público sigue siendo público.** Cualquier cliente con la clave publicable del proyecto podrá acceder a los registros. Esto es una mitigación urgente de **integridad**, no una solución completa de **confidencialidad**. Para obtener privacidad: autenticar el dashboard, servir observaciones desde un endpoint autorizado y retirar la política pública en un cambio posterior.
 
-Los scripts legacy que usan la clave anónima para insertar dejarán de funcionar por diseño. El cron actual sigue bloqueado y no realizará búsquedas externas.
+Los siguientes **seis archivos legacy** contienen intentos de `INSERT` en `keyword_tracking` utilizando `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Tras aplicar esta migración, esas inserciones **serán denegadas**; pueden capturar el error y continuar contando errores, por lo que no deben darse por exitosas:
+
+- `app/api/cron/track-keywords.js`
+- `app/api/cron/api-cron-track-keywords.js`
+- `scripts/track-keywords.mjs`
+- `scripts/track-keywords-improved.mjs`
+- `scripts/track-keywords-serpapi.mjs`
+- `scripts/track-keywords-gsc.mjs`
+
+**Que haya referencias en el repositorio no significa que sean ejecutores activos.** Comprobar que no haya tareas externas, ejecuciones manuales o automatizaciones que dependan de esas escrituras. El cron Next.js vigente en `app/api/cron/track-keywords/route.js` sigue bloqueado y no realizará búsquedas externas. La futura persistencia debe utilizar un mecanismo protegido exclusivamente en el servidor; jamás colocar una credencial `service_role` en el cliente, en `NEXT_PUBLIC_`, en el código GitHub o en logs.
 
 ## Pruebas antes de desplegar
 
 - `npm test`: incluye `tests/keyword-tracking-rls-migration.test.mjs`; es una comprobación **estática**, no ejecuta SQL y **no sustituye** una prueba de integración PostgreSQL.
 - GitHub Actions ejecuta las pruebas offline sin conexión a Supabase.
 - Obtener un backup/punto de restauración viable y anotar el recuento de registros.
+- Confirmar en **Supabase de producción** mediante consulta de lectura que `service_role` tiene `BYPASSRLS` y privilegio `INSERT` (ambos confirmados el 30/10/2026, volver a verificar si se despliega en otra fecha): `SELECT rolname, rolbypassrls FROM pg_roles WHERE rolname = 'service_role';`. El SQL de migración aborta si falta el atributo.
 - Verificar que el uso de `keyword_tracking` por la app sigue siendo exclusivamente `SELECT` desde cliente. Revisar si existen consumidores externos que dependan de escrituras anónimas.
 - Confirmar que el esquema, privilegios y políticas **no han cambiado** con consultas de solo lectura antes de ejecutar la migración.
 - Ensayar en una base de desarrollo con esquema equivalente, especialmente la lectura con rol `anon` y las escrituras rechazadas.
@@ -70,19 +80,48 @@ SELECT
   has_table_privilege('authenticated', 'public.keyword_tracking', 'DELETE') AS auth_can_delete,
   has_table_privilege('service_role', 'public.keyword_tracking', 'INSERT') AS service_can_insert;
 
+SELECT rolname, rolbypassrls FROM pg_roles
+WHERE rolname = 'service_role';
+
 SELECT count(*) AS preserved_rows FROM public.keyword_tracking;
 ```
 
-**Esperado:** RLS `true`, una política SELECT temporal, lecturas cliente `true`, escrituras cliente `false`, escritura de `service_role` `true`, recuento de filas sin cambios por esta migración. Abrir el dashboard después y comprobar que no devuelve `42501` ni error de RLS. Las posiciones erróneas preexistentes no se consideran un fallo de esta migración.
+**Esperado:** RLS `true`, una política SELECT temporal, lecturas cliente `true`, escrituras cliente `false`, escritura de `service_role` `true` **y** `rolbypassrls = true`, recuento de filas sin cambios por esta migración. Abrir el dashboard después y comprobar que no devuelve `42501` ni error de RLS. Las posiciones erróneas preexistentes no se consideran un fallo de esta migración.
 
 Volver a ejecutar los avisos de seguridad de Supabase. La función `public.rls_auto_enable()` será aún una advertencia hasta ser revisada por separado.
 
 ## Incidencias / reversión
 
-- **Antes de COMMIT:** el propio motor revierte automáticamente todos los cambios si falla una precondición o postcondición.
+- **Antes de COMMIT:** el propio motor revierte automáticamente todos los cambios si falla una precondición o postcondición. **Ojo:** esto devuelve el estado anterior, incluida la escritura pública insegura, por lo que el incidente debe permanecer abierto hasta una corrección segura.
 - **Después de COMMIT:** no desactivar RLS ni reabrir escrituras públicas como «rollback rápido»; si falla el dashboard, revisar el `SELECT` concedido, la política SELECT y el código cliente, y aplicar una corrección hacia delante autorizada.
 - Si una integración interna necesita escribir, migrarla a un camino seguro exclusivamente de servidor, nunca restaurar `INSERT` público.
 - Todo cambio real debe anotarse en el issue #8 con fecha, responsable, evidencia de pruebas y autorización del propietario.
+
+## Registro de auditoría
+
+La comprobación se hizo el **30/10/2026** sobre el proyecto SEO Tracker usando consultas de **solo lectura**, sin tocar tablas. Consultas SQL relevantes:
+
+```sql
+SELECT c.relname, c.relrowsecurity,
+       has_table_privilege('anon', c.oid, 'SELECT') AS anon_select,
+       has_table_privilege('anon', c.oid, 'INSERT') AS anon_insert,
+       has_table_privilege('authenticated', c.oid, 'INSERT') AS authenticated_insert,
+       has_table_privilege('service_role', c.oid, 'INSERT') AS service_insert
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relname = 'keyword_tracking';
+
+SELECT policyname, roles, cmd, qual, with_check
+FROM pg_policies
+WHERE schemaname = 'public' AND tablename = 'keyword_tracking';
+
+SELECT rolname, rolbypassrls
+FROM pg_roles WHERE rolname IN ('service_role', 'anon', 'authenticated');
+
+SELECT count(*) FROM public.keyword_tracking;
+```
+
+La revisión cruzada de Claude se encuentra en el [PR #9](https://github.com/astislasti-dotcom/seo-tracker-clone/pull/9). Claude reprodujo el comportamiento del SQL en PostgreSQL local desechable; esa verificación **no sustituye** un ensayo en base de desarrollo y la autorización para aplicar.
 
 ## Referencias oficiales
 
