@@ -6,17 +6,25 @@ import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load env
+// Load env from .env.local file (if it exists)
 function loadEnv(filePath) {
   const env = {};
-  const content = fs.readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed && !trimmed.startsWith('#')) {
-      const [key, ...valueParts] = trimmed.split('=');
-      env[key.trim()] = valueParts.join('=').trim();
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#')) {
+        const [key, ...valueParts] = trimmed.split('=');
+        env[key.trim()] = valueParts.join('=').trim();
+      }
     }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      // Only ignore "file not found" errors; re-throw other errors
+      throw error;
+    }
+    // .env.local does not exist; continue with empty env object
   }
   return env;
 }
@@ -24,16 +32,38 @@ function loadEnv(filePath) {
 const envPath = path.join(__dirname, '..', '.env.local');
 const env = loadEnv(envPath);
 
-console.log('🔐 Supabase URL:', env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Loaded' : '❌ Missing');
-console.log('🔑 Supabase Key:', env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '✅ Loaded' : '❌ Missing');
-console.log('🔍 SerpAPI Key:', process.env.SERPAPI_KEY ? '✅ Loaded' : '❌ Missing (use env var)');
+// Load Supabase credentials from environment or .env.local
+// Precedence: process.env > .env.local
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-const SERPAPI_KEY = '394168ca7463b29536594fc9f47b7a822a4db657e5426b1acc89f994dfe7e2f1';
+console.log('🔐 Supabase URL:', SUPABASE_URL ? '✅ Loaded' : '❌ Missing');
+console.log('🔑 Supabase Key:', SUPABASE_ANON_KEY ? '✅ Loaded' : '❌ Missing');
 
-const supabase = createClient(
-  env.NEXT_PUBLIC_SUPABASE_URL,
-  env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// Load SerpAPI key from environment or .env.local
+// Precedence: process.env > .env.local
+const SERPAPI_KEY = process.env.SERPAPI_API_KEY || env.SERPAPI_API_KEY;
+
+console.log('🔍 SerpAPI Key:', SERPAPI_KEY ? '✅ Loaded' : '❌ Missing (set SERPAPI_API_KEY in .env.local or environment)');
+
+// Exit early if required credentials are missing
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('❌ Error: Supabase credentials are not set.');
+  console.error('Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in:');
+  console.error('  - System environment variables, or');
+  console.error('  - .env.local file (NEXT_PUBLIC_SUPABASE_URL=..., NEXT_PUBLIC_SUPABASE_ANON_KEY=...)');
+  process.exit(1);
+}
+
+if (!SERPAPI_KEY) {
+  console.error('❌ Error: SERPAPI_API_KEY is not set.');
+  console.error('Please set SERPAPI_API_KEY in:');
+  console.error('  - System environment variable, or');
+  console.error('  - .env.local file (SERPAPI_API_KEY=your_key_here)');
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Load keywords
 const keywordsPath = path.join(__dirname, '..', 'public', 'keywords.json');
