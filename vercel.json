@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/track-keywords",
-      "schedule": "0 6 * * *"
+      "schedule": "0 6 * * 1"
     }
   ]
 }
