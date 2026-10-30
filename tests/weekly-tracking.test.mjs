@@ -150,10 +150,92 @@ test('runner: una búsqueda por keyword, sin reintentos, y clasificación correc
     now: FIXED_NOW,
   });
   assert.deepEqual(seen, ['kw ranked', 'kw none']);
-  assert.equal(result.status, 'completed');
+  // Sin persist inyectado no hay guardado: nunca "completed".
+  assert.equal(result.status, 'dry_run');
+  assert.equal(result.reason, 'persistence_not_injected');
+  assert.equal(result.updated, false);
   assert.deepEqual(result.counters, { attempted: 2, ranked: 1, not_found: 1, failed: 0, saved: 0, skipped: 0 });
   assert.equal(result.persistence, 'none');
   assert.equal(result.measured_at, '2026-11-02T06:00:00.000Z');
+});
+
+test('runner: "completed" solo con observaciones guardadas y sin fallos', async () => {
+  const persisted = [];
+  const result = await runWeeklyTracking({
+    keywords: [
+      { id: 1, keyword: 'a', domain: 'astisl.es' },
+      { id: 2, keyword: 'b', domain: '3av.events' },
+    ],
+    search: async (kw) => ({
+      organic_results: [organic(kw.domain === 'astisl.es' ? 'https://astisl.es/' : 'https://other.example/', 1)],
+    }),
+    persist: async (rows) => persisted.push(...rows),
+    now: FIXED_NOW,
+  });
+  assert.equal(result.status, 'completed');
+  assert.equal(result.updated, true);
+  assert.equal(result.persistence, 'ok');
+  assert.equal(result.counters.saved, 2);
+  assert.equal(persisted.length, 2);
+});
+
+test('runner: cero keywords elegibles = skipped, sin búsquedas y sin afirmar actualización', async () => {
+  let calls = 0;
+  const persisted = [];
+  for (const keywords of [[], [{ id: 1, keyword: '', domain: 'astisl.es' }], [{ id: 2, keyword: 'x', domain: 'otro.example' }]]) {
+    const result = await runWeeklyTracking({
+      keywords,
+      search: async () => ((calls++), { organic_results: [] }),
+      persist: async (rows) => persisted.push(...rows),
+      now: FIXED_NOW,
+    });
+    assert.equal(result.status, 'skipped');
+    assert.equal(result.reason, 'no_eligible_keywords');
+    assert.equal(result.updated, false);
+    assert.equal(result.counters.attempted, 0);
+  }
+  assert.equal(calls, 0);
+  assert.equal(persisted.length, 0);
+});
+
+test('runner: lista no válida = refused, sin búsquedas y sin afirmar actualización', async () => {
+  let calls = 0;
+  const result = await runWeeklyTracking({
+    keywords: 'no-es-lista',
+    search: async () => ((calls++), { organic_results: [] }),
+    now: FIXED_NOW,
+  });
+  assert.equal(result.status, 'refused');
+  assert.equal(result.updated, false);
+  assert.equal(calls, 0);
+});
+
+test('runner: todas las búsquedas fallan con persist inyectado = partial, nunca completed', async () => {
+  let persistCalls = 0;
+  const result = await runWeeklyTracking({
+    keywords: [{ id: 1, keyword: 'a', domain: 'astisl.es' }],
+    search: async () => {
+      throw new Error('boom');
+    },
+    persist: async () => (persistCalls++),
+    now: FIXED_NOW,
+  });
+  assert.equal(result.status, 'partial');
+  assert.equal(result.persistence, 'empty');
+  assert.equal(result.updated, false);
+  assert.equal(result.counters.saved, 0);
+  assert.equal(persistCalls, 0, 'no se llama a persist sin filas que guardar');
+});
+
+test('runner: not_found es observación válida, se guarda y produce completed', async () => {
+  const result = await runWeeklyTracking({
+    keywords: [{ id: 1, keyword: 'a', domain: 'astisl.es' }],
+    search: async () => ({ organic_results: [] }),
+    persist: async () => {},
+    now: FIXED_NOW,
+  });
+  assert.equal(result.status, 'completed');
+  assert.equal(result.counters.saved, 1);
 });
 
 test('runner: excepción del proveedor = error, no posición 0, y no se persiste', async () => {
