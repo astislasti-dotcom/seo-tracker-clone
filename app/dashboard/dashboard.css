@@ -539,6 +539,20 @@
 }
 
 @media (max-width: 520px) {
+  .sd-brand-name {
+    display: none;
+  }
+  .sd-nav-item {
+    padding: 8px var(--sd-space-2);
+  }
+  .sd-status {
+    white-space: normal;
+    max-width: 14ch;
+    margin-left: auto;
+  }
+  .sd-table td.sd-num {
+    width: 38%;
+  }
   .sd-kpis {
     grid-template-columns: 1fr;
   }
@@ -550,6 +564,18 @@
   .sd-table td {
     padding-left: var(--sd-space-4);
     padding-right: var(--sd-space-4);
+  }
+}
+
+/* Brand tag inside the keyword cell: only on narrow screens and only in the combined "Todas" view. */
+.sd-brand-inline {
+  display: none;
+  margin-top: var(--sd-space-1);
+}
+
+@media (max-width: 520px) {
+  .sd-root[data-brand='all'] .sd-brand-inline {
+    display: inline-flex;
   }
 }
 

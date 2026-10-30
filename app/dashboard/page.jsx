@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import './dashboard.css';
 import { buildDashboardModel, DISPLAY, summarizeKeywords } from '../../lib/keywords/measurements.mjs';
+import { brandLabel, formatMeasurementDate, measurementSubtitle } from '../../lib/keywords/labels.mjs';
 import { HISTORY_ORDER, readAllRows } from '../../lib/keywords/paginate.mjs';
 
 const supabase = createClient(
@@ -36,31 +37,18 @@ const BRANDS = [
   { id: '3av.events', label: '3AV', name: '3AV Events' },
   { id: 'astisl.es', label: 'ASTI', name: 'ASTI' },
 ];
-const BRAND_LABEL = { '3av.events': '3AV', 'astisl.es': 'ASTI' };
 
 const STATUS_MESSAGES = {
   measurements_error: 'No se pudieron cargar las mediciones. Las cifras no se muestran hasta recuperar datos verificados.',
   measurements_incomplete: 'La lectura de mediciones está incompleta: no se han recibido todas las filas. Las cifras no se muestran para evitar resultados parciales.',
 };
 
-function formatDate(iso) {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString('es-ES');
-}
-
-function subtitleText(model) {
-  if (model.status === 'loading') return 'Cargando mediciones…';
-  if (model.status !== 'ok') return 'Mediciones no disponibles en esta carga';
-  const formatted = model.lastMeasuredAt ? formatDate(model.lastMeasuredAt) : null;
-  return formatted ? `Última medición verificada: ${formatted}` : 'Sin mediciones verificadas todavía';
-}
-
 function positionCell(kw) {
   if (kw.state === DISPLAY.RANKED) {
-    return { value: `#${kw.position}`, note: `Medición verificada · ${formatDate(kw.measured_at) ?? ''}`, state: 'ranked' };
+    return { value: `#${kw.position}`, note: `Medición verificada · ${formatMeasurementDate(kw.measured_at) ?? ''}`, state: 'ranked' };
   }
   if (kw.state === DISPLAY.NOT_FOUND) {
-    return { value: 'No aparece', note: `Medición verificada · ${formatDate(kw.measured_at) ?? ''}`, state: 'none' };
+    return { value: 'No aparece', note: `Medición verificada · ${formatMeasurementDate(kw.measured_at) ?? ''}`, state: 'none' };
   }
   if (kw.state === DISPLAY.UNKNOWN) {
     return { value: '—', note: 'No disponible por error de lectura', state: 'none' };
@@ -203,6 +191,12 @@ export default function Dashboard() {
   const visible = model.keywords.filter((kw) => brand === 'all' || kw.domain === brand);
   const summary = model.status === 'ok' ? summarizeKeywords(visible) : null;
   const counts = summary?.counts ?? null;
+  // Date and scope come from the visible brand only, never from the global model.
+  const subtitle = measurementSubtitle({
+    status: model.status,
+    lastMeasuredAt: summary?.lastMeasuredAt ?? null,
+    brand,
+  });
   const normalizedQuery = query.trim().toLowerCase();
   const rows = visible.filter((kw) => !normalizedQuery || kw.keyword.toLowerCase().includes(normalizedQuery));
 
@@ -283,8 +277,11 @@ export default function Dashboard() {
                   const pos = positionCell(kw);
                   return (
                     <tr key={kw.key}>
-                      <td><span className="sd-keyword">{kw.keyword}</span></td>
-                      <td className="sd-col-brand"><span className="sd-pill">{BRAND_LABEL[kw.domain] ?? kw.domain}</span></td>
+                      <td>
+                        <span className="sd-keyword">{kw.keyword}</span>
+                        <span className="sd-pill sd-brand-inline">{brandLabel(kw.domain)}</span>
+                      </td>
+                      <td className="sd-col-brand"><span className="sd-pill">{brandLabel(kw.domain)}</span></td>
                       <td className="sd-col-intent sd-muted">{kw.intent}</td>
                       <td className="sd-col-priority"><span className="sd-pill" data-priority={kw.priority}>{kw.priority}</span></td>
                       <td className="sd-num">
@@ -301,7 +298,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="sd-root">
+    <div className="sd-root" data-brand={brand}>
       <div className="sd-shell">
         <aside className="sd-sidebar" aria-label="Navegación principal">
           <div className="sd-brand">
@@ -316,7 +313,7 @@ export default function Dashboard() {
               <IconReports /> Reportes
             </button>
           </nav>
-          <div className="sd-sidebar-foot">{subtitleText(model)}</div>
+          <div className="sd-sidebar-foot">{subtitle}</div>
         </aside>
 
         <main className="sd-main">
@@ -324,7 +321,7 @@ export default function Dashboard() {
             <header className="sd-header">
               <div>
                 <h1 className="sd-title">Control SEO</h1>
-                <p className="sd-subtitle">{subtitleText(model)}</p>
+                <p className="sd-subtitle">{subtitle}</p>
               </div>
               {view === 'overview' && (
                 <div className="sd-segmented" role="group" aria-label="Filtrar por marca">
