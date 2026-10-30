@@ -3,18 +3,32 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { buildDashboardModel, DISPLAY } from '../../lib/keywords/measurements.mjs';
+import { readAllRows } from '../../lib/keywords/paginate.mjs';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-const EMPTY_MODEL = {
+const LOADING_MODEL = {
   status: 'loading',
   keywords: [],
-  counts: { total: 0, ranked: 0, top10: 0, notFound: 0, unverified: 0 },
+  counts: null,
   averagePosition: null,
   lastMeasuredAt: null,
+};
+
+// Complete history, read page by page. The exact total is requested so that a silent
+// server-side row cap is detected and reported instead of showing partial data.
+const fetchHistoryPage = async (from, to) => {
+  const { data, error, count } = await supabase
+    .from('keyword_tracking')
+    .select('*', { count: 'exact' })
+    .order('timestamp', { ascending: true })
+    .order('keyword_id', { ascending: true })
+    .order('domain', { ascending: true })
+    .range(from, to);
+  return { data, error, count };
 };
 
 function formatDate(iso) {
@@ -23,6 +37,8 @@ function formatDate(iso) {
 }
 
 function lastMeasurementLabel(model) {
+  if (model.status === 'loading') return 'Cargando mediciones…';
+  if (model.status !== 'ok') return 'Mediciones no disponibles en esta carga';
   const formatted = model.lastMeasuredAt ? formatDate(model.lastMeasuredAt) : null;
   return formatted ? `Última medición verificada: ${formatted}` : 'Sin medición verificada';
 }
@@ -30,17 +46,23 @@ function lastMeasurementLabel(model) {
 function positionText(kw) {
   if (kw.state === DISPLAY.RANKED) return `#${kw.position}`;
   if (kw.state === DISPLAY.NOT_FOUND) return 'No aparece';
+  if (kw.state === DISPLAY.UNKNOWN) return 'No disponible';
   return 'Sin medición verificada';
+}
+
+function positionColor(kw) {
+  return kw.state === DISPLAY.RANKED ? '#33c4b4' : '#999';
 }
 
 const STATUS_MESSAGES = {
   catalog_error: 'No se pudo cargar el catálogo de keywords. No se muestran datos.',
   empty: 'El catálogo de keywords está vacío.',
-  measurements_error: 'No se pudieron cargar las mediciones. Las posiciones no se muestran hasta recuperar datos verificados.',
+  measurements_error: 'No se pudieron cargar las mediciones. Las cifras no se muestran hasta recuperar datos verificados.',
+  measurements_incomplete: 'La lectura de mediciones está incompleta: no se han recibido todas las filas. Las cifras no se muestran para evitar resultados parciales.',
 };
 
 export default function Dashboard() {
-  const [model, setModel] = useState(EMPTY_MODEL);
+  const [model, setModel] = useState(LOADING_MODEL);
   const [activeTab, setActiveTab] = useState('overview');
   const [activeDomain, setActiveDomain] = useState('all');
 
@@ -54,21 +76,13 @@ export default function Dashboard() {
         if (!response.ok) throw new Error('catalog_http_error');
         catalogRaw = await response.json();
       } catch {
-        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null }));
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: null }));
         return;
       }
 
-      // No row limit: every observation is fetched and attributed by logical key.
-      // Legacy rows without a keyword_key cannot be attributed and show as unverified.
-      let next;
-      try {
-        const { data: rows, error } = await supabase.from('keyword_tracking').select('*');
-        if (error) console.error('keyword_tracking read failed');
-        next = buildDashboardModel({ catalogRaw, rows: rows ?? [], error: error ?? null });
-      } catch {
-        next = buildDashboardModel({ catalogRaw, rows: [], error: new Error('read_failed') });
-      }
-      if (!cancelled) setModel(next);
+      const read = await readAllRows(fetchHistoryPage);
+      if (!read.ok) console.error('keyword_tracking read incomplete or failed:', read.reason);
+      if (!cancelled) setModel(buildDashboardModel({ catalogRaw, read }));
     };
 
     load();
@@ -86,8 +100,24 @@ export default function Dashboard() {
       ? keywords
       : keywords.filter(k => k.domain === activeDomain);
 
-  const showTable = !loading && (model.status === 'ok' || model.status === 'measurements_error');
+  const showTable = !loading && (model.status === 'ok' || model.status === 'measurements_error' || model.status === 'measurements_incomplete');
   const statusMessage = STATUS_MESSAGES[model.status];
+
+  // KPI values: "—" whenever the number is not a reliable measurement.
+  const top10Value = loading || !counts || counts.top10 === null ? '—' : counts.top10;
+  const top10Note = loading
+    ? 'Cargando…'
+    : !counts
+      ? 'Sin datos fiables en esta carga'
+      : counts.ranked === 0
+        ? 'Sin posiciones verificadas todavía'
+        : `${counts.ranked} con posición verificada de ${counts.total}`;
+  const averageValue = loading || model.averagePosition === null ? '—' : model.averagePosition.toFixed(1);
+  const averageNote = loading
+    ? 'Cargando…'
+    : !counts
+      ? 'Sin datos fiables en esta carga'
+      : `${counts.notFound} sin aparecer · ${counts.unverified} sin medición verificada`;
 
   return (
     <div style={{ fontFamily: "'Open Sans', sans-serif", background: '#f5f5f5', minHeight: '100vh' }}>
@@ -147,7 +177,7 @@ export default function Dashboard() {
             📋 Reports
           </div>
           <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.15)', fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>
-            {loading ? 'Cargando mediciones…' : lastMeasurementLabel(model)}
+            {lastMeasurementLabel(model)}
           </div>
         </div>
 
@@ -159,7 +189,7 @@ export default function Dashboard() {
               Control SEO Integral
             </h1>
             <p style={{ color: '#888', fontSize: '12px', margin: '4px 0 0 0' }}>
-              {loading ? 'Cargando mediciones…' : lastMeasurementLabel(model)}
+              {lastMeasurementLabel(model)}
             </p>
           </div>
 
@@ -204,10 +234,10 @@ export default function Dashboard() {
                     Top 10 verificadas
                   </div>
                   <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#004e5a' }}>
-                    {loading ? '—' : counts.top10}
+                    {top10Value}
                   </div>
                   <div style={{ fontSize: '12px', marginTop: '8px', color: '#666' }}>
-                    {loading ? 'Cargando…' : `${counts.ranked} con posición verificada de ${counts.total}`}
+                    {top10Note}
                   </div>
                 </div>
                 <div style={{ background: 'white', padding: '20px', borderRadius: '8px', borderLeft: '3px solid #33c4b4' }}>
@@ -215,10 +245,10 @@ export default function Dashboard() {
                     Posición media verificada
                   </div>
                   <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#004e5a' }}>
-                    {loading || model.averagePosition === null ? '—' : model.averagePosition.toFixed(1)}
+                    {averageValue}
                   </div>
                   <div style={{ fontSize: '12px', marginTop: '8px', color: '#666' }}>
-                    {loading ? 'Cargando…' : `${counts.notFound} sin aparecer · ${counts.unverified} sin medición verificada`}
+                    {averageNote}
                   </div>
                 </div>
               </div>
@@ -287,7 +317,7 @@ export default function Dashboard() {
                               {kw.domain === '3av.events' ? '3AV' : 'ASTI'}
                             </span>
                           </td>
-                          <td style={{ padding: '12px', fontSize: '13px', color: kw.state === DISPLAY.RANKED ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
+                          <td style={{ padding: '12px', fontSize: '13px', color: positionColor(kw), fontWeight: 'bold' }}>
                             {positionText(kw)}
                           </td>
                         </tr>
@@ -356,7 +386,7 @@ function DomainTable({ rows }) {
         {rows.map(kw => (
           <tr key={kw.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
             <td style={{ padding: '12px', fontSize: '13px' }}>{kw.keyword}</td>
-            <td style={{ padding: '12px', fontSize: '13px', color: kw.state === DISPLAY.RANKED ? '#33c4b4' : '#999', fontWeight: 'bold' }}>
+            <td style={{ padding: '12px', fontSize: '13px', color: positionColor(kw), fontWeight: 'bold' }}>
               {positionText(kw)}
             </td>
           </tr>
