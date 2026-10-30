@@ -1,26 +1,19 @@
-import { createClient } from '@supabase/supabase-js'
+// E1: this endpoint is retired. It previously allowed anonymous inserts into
+// `keywords` through the public anon key. Nothing in the app consumes it, so both
+// methods answer 410 Gone and never touch Supabase. Restoring any access requires
+// a new, authenticated design approved in issue #15.
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-)
-
-export async function GET() {
-  const { data, error } = await supabase
-    .from('keywords')
-    .select('*')
-    .order('priority', { ascending: true })
-
-  if (error) return Response.json({ error }, { status: 500 })
-  return Response.json(data)
+function retired() {
+  return Response.json(
+    { error: 'endpoint_retired' },
+    { status: 410, headers: { 'Cache-Control': 'no-store' } }
+  );
 }
 
-export async function POST(req) {
-  const keywords = await req.json()
-  const { data, error } = await supabase
-    .from('keywords')
-    .insert(keywords)
+export async function GET() {
+  return retired();
+}
 
-  if (error) return Response.json({ error }, { status: 500 })
-  return Response.json(data)
+export async function POST() {
+  return retired();
 }
