@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { buildDashboardModel, DISPLAY } from '../../lib/keywords/measurements.mjs';
-import { readAllRows } from '../../lib/keywords/paginate.mjs';
+import { HISTORY_ORDER, readAllRows } from '../../lib/keywords/paginate.mjs';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -21,13 +21,12 @@ const LOADING_MODEL = {
 // Complete history, read page by page. The exact total is requested so that a silent
 // server-side row cap is detected and reported instead of showing partial data.
 const fetchHistoryPage = async (from, to) => {
-  const { data, error, count } = await supabase
-    .from('keyword_tracking')
-    .select('*', { count: 'exact' })
-    .order('timestamp', { ascending: true })
-    .order('keyword_id', { ascending: true })
-    .order('domain', { ascending: true })
-    .range(from, to);
+  let query = supabase.from('keyword_tracking').select('*', { count: 'exact' });
+  // Unique, stable order (ends with the primary key) so offset pages never overlap or skip.
+  for (const column of HISTORY_ORDER) {
+    query = query.order(column, { ascending: true });
+  }
+  const { data, error, count } = await query.range(from, to);
   return { data, error, count };
 };
 

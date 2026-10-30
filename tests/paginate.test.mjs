@@ -100,3 +100,38 @@ test('requests use contiguous, non-overlapping ranges', async () => {
 test('rejects a non-function fetchPage', async () => {
   await assert.rejects(() => readAllRows(null), TypeError);
 });
+
+// ---------- stable, total ordering for offset pagination ----------
+
+import { HISTORY_ORDER, compareByOrder } from '../lib/keywords/paginate.mjs';
+
+test('history order ends with the primary key id and has no repeated columns', () => {
+  assert.equal(HISTORY_ORDER.at(-1), 'id');
+  assert.equal(new Set(HISTORY_ORDER).size, HISTORY_ORDER.length);
+  assert.deepEqual([...HISTORY_ORDER.slice(0, 3)], ['timestamp', 'keyword_id', 'domain']);
+});
+
+test('ties on timestamp, keyword_id and domain are broken by id: order is total and deterministic', () => {
+  // Three rows share the first three keys; only id tells them apart.
+  const rows = [
+    { timestamp: 't1', keyword_id: 5, domain: 'astisl.es', id: 'c' },
+    { timestamp: 't1', keyword_id: 5, domain: 'astisl.es', id: 'a' },
+    { timestamp: 't1', keyword_id: 5, domain: 'astisl.es', id: 'b' },
+  ];
+  const compare = compareByOrder(HISTORY_ORDER);
+  const sortedA = [...rows].sort(compare).map((r) => r.id);
+  const sortedB = [...rows].reverse().sort(compare).map((r) => r.id);
+  assert.deepEqual(sortedA, ['a', 'b', 'c']);
+  assert.deepEqual(sortedB, sortedA);
+  // Adjacent rows never compare equal, so no two rows can be interchanged across pages.
+  for (let i = 1; i < sortedA.length; i++) {
+    assert.notEqual(compare({ ...rows[0], id: sortedA[i - 1] }, { ...rows[0], id: sortedA[i] }), 0);
+  }
+});
+
+test('without id as tie-breaker, identical keys stay tied (the reason id is required)', () => {
+  const tiedOnly = compareByOrder(HISTORY_ORDER.slice(0, 3));
+  const a = { timestamp: 't1', keyword_id: 5, domain: 'astisl.es', id: 'a' };
+  const b = { timestamp: 't1', keyword_id: 5, domain: 'astisl.es', id: 'b' };
+  assert.equal(tiedOnly(a, b), 0);
+});
