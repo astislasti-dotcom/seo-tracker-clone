@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { buildDashboardModel, DISPLAY } from '../../lib/keywords/measurements.mjs';
+import './dashboard.css';
+import { buildDashboardModel, DISPLAY, summarizeKeywords } from '../../lib/keywords/measurements.mjs';
+import { brandLabel, formatMeasurementDate, measurementSubtitle } from '../../lib/keywords/labels.mjs';
 import { HISTORY_ORDER, readAllRows } from '../../lib/keywords/paginate.mjs';
 
 const supabase = createClient(
@@ -30,40 +32,129 @@ const fetchHistoryPage = async (from, to) => {
   return { data, error, count };
 };
 
-function formatDate(iso) {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? null : date.toLocaleDateString('es-ES');
-}
-
-function lastMeasurementLabel(model) {
-  if (model.status === 'loading') return 'Cargando mediciones…';
-  if (model.status !== 'ok') return 'Mediciones no disponibles en esta carga';
-  const formatted = model.lastMeasuredAt ? formatDate(model.lastMeasuredAt) : null;
-  return formatted ? `Última medición verificada: ${formatted}` : 'Sin medición verificada';
-}
-
-function positionText(kw) {
-  if (kw.state === DISPLAY.RANKED) return `#${kw.position}`;
-  if (kw.state === DISPLAY.NOT_FOUND) return 'No aparece';
-  if (kw.state === DISPLAY.UNKNOWN) return 'No disponible';
-  return 'Sin medición verificada';
-}
-
-function positionColor(kw) {
-  return kw.state === DISPLAY.RANKED ? '#33c4b4' : '#999';
-}
+const BRANDS = [
+  { id: 'all', label: 'Todas', name: 'Todas las marcas' },
+  { id: '3av.events', label: '3AV', name: '3AV Events' },
+  { id: 'astisl.es', label: 'ASTI', name: 'ASTI' },
+];
 
 const STATUS_MESSAGES = {
-  catalog_error: 'No se pudo cargar el catálogo de keywords. No se muestran datos.',
-  empty: 'El catálogo de keywords está vacío.',
   measurements_error: 'No se pudieron cargar las mediciones. Las cifras no se muestran hasta recuperar datos verificados.',
   measurements_incomplete: 'La lectura de mediciones está incompleta: no se han recibido todas las filas. Las cifras no se muestran para evitar resultados parciales.',
 };
 
+function positionCell(kw) {
+  if (kw.state === DISPLAY.RANKED) {
+    return { value: `#${kw.position}`, note: `Medición verificada · ${formatMeasurementDate(kw.measured_at) ?? ''}`, state: 'ranked' };
+  }
+  if (kw.state === DISPLAY.NOT_FOUND) {
+    return { value: 'No aparece', note: `Medición verificada · ${formatMeasurementDate(kw.measured_at) ?? ''}`, state: 'none' };
+  }
+  if (kw.state === DISPLAY.UNKNOWN) {
+    return { value: '—', note: 'No disponible por error de lectura', state: 'none' };
+  }
+  return { value: '—', note: 'Sin medición verificada', state: 'none' };
+}
+
+/* ---------- Icons (inline SVG, no emoji) ---------- */
+
+function Icon({ children, size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {children}
+    </svg>
+  );
+}
+
+const IconPanel = () => (
+  <Icon>
+    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+    <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    <rect x="14" y="14" width="7" height="7" rx="1.5" />
+  </Icon>
+);
+
+const IconReports = () => (
+  <Icon>
+    <path d="M7 3h7l5 5v13H7z" />
+    <path d="M14 3v5h5" />
+    <path d="M10 13h6M10 17h6" />
+  </Icon>
+);
+
+const IconSearch = () => (
+  <Icon size={16}>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.2-4.2" />
+  </Icon>
+);
+
+const IconAlert = () => (
+  <Icon>
+    <path d="M12 4 2.8 20h18.4z" />
+    <path d="M12 10v4M12 17.5v.5" />
+  </Icon>
+);
+
+const IconEmpty = () => (
+  <Icon>
+    <rect x="4" y="5" width="16" height="14" rx="2" />
+    <path d="M4 10h16" />
+  </Icon>
+);
+
+const IconMark = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true" focusable="false">
+    <path d="M4 19V11M10 19V5M16 19v-6M22 19H2" />
+  </svg>
+);
+
+/* ---------- Small components ---------- */
+
+function KpiCard({ label, value, note, empty }) {
+  return (
+    <div className="sd-card sd-kpi">
+      <div className="sd-kpi-label">{label}</div>
+      <div className="sd-kpi-value" data-empty={empty ? 'true' : 'false'}>
+        {value}
+      </div>
+      <div className="sd-kpi-note">{note}</div>
+    </div>
+  );
+}
+
+function StateCard({ icon, title, text, action }) {
+  return (
+    <div className="sd-state" role="status">
+      <div className="sd-state-icon">{icon}</div>
+      <p className="sd-state-title">{title}</p>
+      {text && <p className="sd-state-text">{text}</p>}
+      {action}
+    </div>
+  );
+}
+
+function SkeletonRows() {
+  return Array.from({ length: 5 }, (_, i) => (
+    <tr key={i} aria-hidden="true">
+      <td><span className="sd-skeleton" style={{ width: '60%' }} /></td>
+      <td className="sd-col-intent"><span className="sd-skeleton" style={{ width: '50%' }} /></td>
+      <td className="sd-col-intent"><span className="sd-skeleton" style={{ width: '40%' }} /></td>
+      <td className="sd-col-priority"><span className="sd-skeleton" style={{ width: '30%' }} /></td>
+      <td className="sd-num"><span className="sd-skeleton" style={{ width: '50%', marginLeft: 'auto' }} /></td>
+    </tr>
+  ));
+}
+
+/* ---------- Page ---------- */
+
 export default function Dashboard() {
   const [model, setModel] = useState(LOADING_MODEL);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [activeDomain, setActiveDomain] = useState('all');
+  const [attempt, setAttempt] = useState(0);
+  const [view, setView] = useState('overview');
+  const [brand, setBrand] = useState('all');
+  const [query, setQuery] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -88,309 +179,213 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  const retry = () => {
+    setModel(LOADING_MODEL);
+    setAttempt((n) => n + 1);
+  };
 
   const loading = model.status === 'loading';
-  const keywords = model.keywords;
-  const counts = model.counts;
+  const brandInfo = BRANDS.find((b) => b.id === brand);
+  const visible = model.keywords.filter((kw) => brand === 'all' || kw.domain === brand);
+  const summary = model.status === 'ok' ? summarizeKeywords(visible) : null;
+  const counts = summary?.counts ?? null;
+  // Date and scope come from the visible brand only, never from the global model.
+  const subtitle = measurementSubtitle({
+    status: model.status,
+    lastMeasuredAt: summary?.lastMeasuredAt ?? null,
+    brand,
+  });
+  const normalizedQuery = query.trim().toLowerCase();
+  const rows = visible.filter((kw) => !normalizedQuery || kw.keyword.toLowerCase().includes(normalizedQuery));
 
-  const filteredKeywords =
-    activeDomain === 'all'
-      ? keywords
-      : keywords.filter(k => k.domain === activeDomain);
+  const dash = '—';
+  const noReliable = 'Sin datos fiables en esta carga';
+  const kpis = [
+    {
+      label: 'Keywords',
+      value: loading || !counts ? dash : counts.total,
+      note: loading ? 'Cargando…' : !counts ? noReliable : brandInfo.name,
+      empty: loading || !counts,
+    },
+    {
+      label: 'Con medición verificada',
+      value: loading || !counts ? dash : counts.ranked + counts.notFound,
+      note: loading ? 'Cargando…' : !counts ? noReliable : `${counts.ranked} posicionadas · ${counts.notFound} sin aparecer`,
+      empty: loading || !counts,
+    },
+    {
+      label: 'Top 10 verificadas',
+      value: loading || !counts || counts.top10 === null ? dash : counts.top10,
+      note: loading ? 'Cargando…' : !counts ? noReliable : counts.ranked === 0 ? 'Sin posiciones verificadas todavía' : `De ${counts.ranked} posicionadas`,
+      empty: loading || !counts || counts.top10 === null,
+    },
+    {
+      label: 'Posición media',
+      value: loading || !summary || summary.averagePosition === null ? dash : summary.averagePosition.toFixed(1),
+      note: loading ? 'Cargando…' : !counts ? noReliable : counts.ranked === 0 ? 'Sin posiciones verificadas todavía' : `Sobre ${counts.ranked} posiciones verificadas`,
+      empty: loading || !summary || summary.averagePosition === null,
+    },
+  ];
 
-  const showTable = !loading && (model.status === 'ok' || model.status === 'measurements_error' || model.status === 'measurements_incomplete');
-  const statusMessage = STATUS_MESSAGES[model.status];
+  const measurementBanner = STATUS_MESSAGES[model.status];
 
-  // KPI values: "—" whenever the number is not a reliable measurement.
-  const top10Value = loading || !counts || counts.top10 === null ? '—' : counts.top10;
-  const top10Note = loading
-    ? 'Cargando…'
-    : !counts
-      ? 'Sin datos fiables en esta carga'
-      : counts.ranked === 0
-        ? 'Sin posiciones verificadas todavía'
-        : `${counts.ranked} con posición verificada de ${counts.total}`;
-  const averageValue = loading || model.averagePosition === null ? '—' : model.averagePosition.toFixed(1);
-  const averageNote = loading
-    ? 'Cargando…'
-    : !counts
-      ? 'Sin datos fiables en esta carga'
-      : `${counts.notFound} sin aparecer · ${counts.unverified} sin medición verificada`;
+  let tableArea;
+  if (model.status === 'catalog_error') {
+    tableArea = (
+      <StateCard
+        icon={<IconAlert />}
+        title="No se pudo cargar el catálogo de keywords"
+        text="Revisa la conexión y vuelve a intentarlo. No se muestran datos hasta que el catálogo esté disponible."
+        action={<button type="button" className="sd-button" onClick={retry}>Reintentar</button>}
+      />
+    );
+  } else if (!loading && model.status === 'empty') {
+    tableArea = (
+      <StateCard
+        icon={<IconEmpty />}
+        title="Todavía no hay keywords configuradas"
+        text="Añade keywords al catálogo para empezar a medir su posición."
+      />
+    );
+  } else if (!loading && visible.length === 0) {
+    tableArea = (
+      <StateCard icon={<IconEmpty />} title="Esta marca no tiene keywords en el catálogo" text="Selecciona otra marca o añade keywords al catálogo." />
+    );
+  } else if (!loading && rows.length === 0) {
+    tableArea = (
+      <StateCard icon={<IconSearch />} title="Ninguna keyword coincide con la búsqueda" text="Prueba con otro término o borra el filtro." />
+    );
+  } else {
+    tableArea = (
+      <div className="sd-table-wrap">
+        <table className="sd-table">
+          <thead>
+            <tr>
+              <th scope="col">Keyword</th>
+              <th scope="col" className="sd-col-brand">Marca</th>
+              <th scope="col" className="sd-col-intent">Intención</th>
+              <th scope="col" className="sd-col-priority">Prioridad</th>
+              <th scope="col" className="sd-num">Posición</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading
+              ? <SkeletonRows />
+              : rows.map((kw) => {
+                  const pos = positionCell(kw);
+                  return (
+                    <tr key={kw.key}>
+                      <td>
+                        <span className="sd-keyword">{kw.keyword}</span>
+                        <span className="sd-pill sd-brand-inline">{brandLabel(kw.domain)}</span>
+                      </td>
+                      <td className="sd-col-brand"><span className="sd-pill">{brandLabel(kw.domain)}</span></td>
+                      <td className="sd-col-intent sd-muted">{kw.intent}</td>
+                      <td className="sd-col-priority"><span className="sd-pill" data-priority={kw.priority}>{kw.priority}</span></td>
+                      <td className="sd-num">
+                        <div className="sd-position" data-state={pos.state}>{pos.value}</div>
+                        <span className="sd-status">{pos.note}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ fontFamily: "'Open Sans', sans-serif", background: '#f5f5f5', minHeight: '100vh' }}>
-      {/* Sidebar */}
-      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', minHeight: '100vh' }}>
-        <div style={{ background: '#004e5a', color: 'white', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ marginBottom: '32px', paddingBottom: '24px', borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
-            <div style={{ fontSize: '13px', fontWeight: 600 }}>SEO Suite</div>
+    <div className="sd-root" data-brand={brand}>
+      <div className="sd-shell">
+        <aside className="sd-sidebar" aria-label="Navegación principal">
+          <div className="sd-brand">
+            <div className="sd-brand-mark"><IconMark /></div>
+            <div className="sd-brand-name">SEO Tracker</div>
           </div>
-          <div
-            onClick={() => setActiveTab('overview')}
-            style={{
-              padding: '12px 0',
-              cursor: 'pointer',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-              fontSize: '13px',
-              color: activeTab === 'overview' ? '#33c4b4' : 'white',
-              fontWeight: activeTab === 'overview' ? 600 : 400,
-            }}
-          >
-            📊 Overview
-          </div>
-          <div
-            onClick={() => setActiveTab('3av')}
-            style={{
-              padding: '12px 0',
-              cursor: 'pointer',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-              fontSize: '13px',
-              color: activeTab === '3av' ? '#33c4b4' : 'white',
-            }}
-          >
-            🎬 3AV
-          </div>
-          <div
-            onClick={() => setActiveTab('asti')}
-            style={{
-              padding: '12px 0',
-              cursor: 'pointer',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-              fontSize: '13px',
-              color: activeTab === 'asti' ? '#33c4b4' : 'white',
-            }}
-          >
-            🏢 ASTI
-          </div>
-          <div
-            onClick={() => setActiveTab('reports')}
-            style={{
-              padding: '12px 0',
-              cursor: 'pointer',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-              fontSize: '13px',
-              color: activeTab === 'reports' ? '#33c4b4' : 'white',
-            }}
-          >
-            📋 Reports
-          </div>
-          <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255,255,255,0.15)', fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>
-            {lastMeasurementLabel(model)}
-          </div>
-        </div>
+          <nav className="sd-nav">
+            <button type="button" className="sd-nav-item" aria-current={view === 'overview' ? 'page' : undefined} onClick={() => setView('overview')}>
+              <IconPanel /> Panel
+            </button>
+            <button type="button" className="sd-nav-item" aria-current={view === 'reports' ? 'page' : undefined} onClick={() => setView('reports')}>
+              <IconReports /> Reportes
+            </button>
+          </nav>
+          <div className="sd-sidebar-foot">{subtitle}</div>
+        </aside>
 
-        {/* Main */}
-        <div style={{ padding: '24px', background: '#f5f5f5' }}>
-          {/* Header */}
-          <div style={{ background: 'white', padding: '20px', borderRadius: '8px', marginBottom: '24px', borderLeft: '4px solid #33c4b4' }}>
-            <h1 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: '22px', color: '#004e5a', margin: 0, fontWeight: 700 }}>
-              Control SEO Integral
-            </h1>
-            <p style={{ color: '#888', fontSize: '12px', margin: '4px 0 0 0' }}>
-              {lastMeasurementLabel(model)}
-            </p>
-          </div>
-
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, background: 'white', borderRadius: '8px', marginBottom: '24px' }}>
-            {['overview', '3av', 'asti', 'reports'].map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  padding: '14px 20px',
-                  cursor: 'pointer',
-                  border: 'none',
-                  background: 'white',
-                  borderBottom: activeTab === tab ? '3px solid #33c4b4' : '3px solid transparent',
-                  fontWeight: activeTab === tab ? 500 : 400,
-                  color: activeTab === tab ? '#33c4b4' : '#999',
-                  fontSize: '12px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                {tab === 'overview' && '📊 Overview'}
-                {tab === '3av' && '🎬 3AV'}
-                {tab === 'asti' && '🏢 ASTI'}
-                {tab === 'reports' && '📋 Reports'}
-              </button>
-            ))}
-          </div>
-
-          {statusMessage && (
-            <div role="alert" style={{ background: '#fff4e5', border: '1px solid #f0c36d', color: '#7a4d00', padding: '12px 16px', borderRadius: '8px', marginBottom: '24px', fontSize: '13px' }}>
-              {statusMessage}
-            </div>
-          )}
-
-          {activeTab === 'overview' && (
-            <>
-              {/* KPI Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-                <div style={{ background: 'white', padding: '20px', borderRadius: '8px', borderLeft: '3px solid #33c4b4' }}>
-                  <div style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>
-                    Top 10 verificadas
-                  </div>
-                  <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#004e5a' }}>
-                    {top10Value}
-                  </div>
-                  <div style={{ fontSize: '12px', marginTop: '8px', color: '#666' }}>
-                    {top10Note}
-                  </div>
+        <main className="sd-main">
+          <div className="sd-content">
+            <header className="sd-header">
+              <div>
+                <h1 className="sd-title">Control SEO</h1>
+                <p className="sd-subtitle">{subtitle}</p>
+              </div>
+              {view === 'overview' && (
+                <div className="sd-segmented" role="group" aria-label="Filtrar por marca">
+                  {BRANDS.map((b) => (
+                    <button key={b.id} type="button" aria-pressed={brand === b.id} onClick={() => setBrand(b.id)}>
+                      {b.label}
+                    </button>
+                  ))}
                 </div>
-                <div style={{ background: 'white', padding: '20px', borderRadius: '8px', borderLeft: '3px solid #33c4b4' }}>
-                  <div style={{ fontSize: '10px', color: '#999', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 600 }}>
-                    Posición media verificada
-                  </div>
-                  <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#004e5a' }}>
-                    {averageValue}
-                  </div>
-                  <div style={{ fontSize: '12px', marginTop: '8px', color: '#666' }}>
-                    {averageNote}
-                  </div>
-                </div>
+              )}
+            </header>
+
+            {measurementBanner && view === 'overview' && (
+              <div className="sd-banner" data-tone="error" role="alert">
+                <div className="sd-banner-body">{measurementBanner}</div>
+                <button type="button" className="sd-button" style={{ marginTop: 0 }} onClick={retry}>Reintentar</button>
               </div>
+            )}
 
-              {/* Domain Filter */}
-              <div style={{ marginBottom: '12px', display: 'flex', gap: '8px' }}>
-                {['all', '3av.events', 'astisl.es'].map(domain => (
-                  <button
-                    key={domain}
-                    onClick={() => setActiveDomain(domain)}
-                    style={{
-                      padding: '8px 16px',
-                      border: activeDomain === domain ? '2px solid #33c4b4' : '1px solid #ddd',
-                      background: activeDomain === domain ? '#f0f9f8' : 'white',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '12px',
-                      fontWeight: activeDomain === domain ? 600 : 400,
-                      color: activeDomain === domain ? '#004e5a' : '#666',
-                    }}
-                  >
-                    {domain === 'all' ? 'Todas' : domain}
-                  </button>
-                ))}
-              </div>
+            {view === 'reports' && (
+              <section className="sd-card">
+                <StateCard
+                  icon={<IconReports />}
+                  title="Reportes en preparación"
+                  text="Los reportes semanales y mensuales estarán disponibles próximamente."
+                />
+              </section>
+            )}
 
-              {/* Keywords Table */}
-              <div style={{ background: 'white', padding: '24px', borderRadius: '8px' }}>
-                <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: '16px', color: '#004e5a', marginBottom: '16px', fontWeight: 700 }}>
-                  Keywords
-                </h2>
-                {loading && <p>Cargando datos...</p>}
-                {showTable && (
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                          Keyword
-                        </th>
-                        <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                          Web
-                        </th>
-                        <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-                          Posición
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredKeywords.map(kw => (
-                        <tr key={kw.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: '12px', fontSize: '13px' }}>
-                            <strong>{kw.keyword}</strong>
-                          </td>
-                          <td style={{ padding: '12px', fontSize: '13px' }}>
-                            <span
-                              style={{
-                                display: 'inline-block',
-                                padding: '4px 10px',
-                                borderRadius: '12px',
-                                fontSize: '10px',
-                                fontWeight: 500,
-                                background: kw.domain === '3av.events' ? '#e3f2fd' : '#f0f0f0',
-                                color: kw.domain === '3av.events' ? '#004e5a' : '#555',
-                              }}
-                            >
-                              {kw.domain === '3av.events' ? '3AV' : 'ASTI'}
-                            </span>
-                          </td>
-                          <td style={{ padding: '12px', fontSize: '13px', color: positionColor(kw), fontWeight: 'bold' }}>
-                            {positionText(kw)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </>
-          )}
+            {view === 'overview' && (
+              <>
+                <section className="sd-kpis" aria-label="Resumen">
+                  {kpis.map((k) => (
+                    <KpiCard key={k.label} label={k.label} value={k.value} note={k.note} empty={k.empty} />
+                  ))}
+                </section>
 
-          {activeTab === '3av' && (
-            <div style={{ background: 'white', padding: '24px', borderRadius: '8px' }}>
-              <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: '18px', color: '#004e5a', marginBottom: '20px' }}>
-                3AV Events
-              </h2>
-              <p style={{ color: '#666', marginBottom: '16px' }}>
-                Total keywords: {keywords.filter(k => k.domain === '3av.events').length}
-              </p>
-              {showTable && <DomainTable rows={keywords.filter(k => k.domain === '3av.events')} />}
-            </div>
-          )}
-
-          {activeTab === 'asti' && (
-            <div style={{ background: 'white', padding: '24px', borderRadius: '8px' }}>
-              <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: '18px', color: '#004e5a', marginBottom: '20px' }}>
-                ASTI S.L.
-              </h2>
-              <p style={{ color: '#666', marginBottom: '16px' }}>
-                Total keywords: {keywords.filter(k => k.domain === 'astisl.es').length}
-              </p>
-              {showTable && <DomainTable rows={keywords.filter(k => k.domain === 'astisl.es')} />}
-            </div>
-          )}
-
-          {activeTab === 'reports' && (
-            <div style={{ background: 'white', padding: '24px', borderRadius: '8px' }}>
-              <h2 style={{ fontFamily: "'Montserrat', sans-serif", fontSize: '18px', color: '#004e5a', marginBottom: '20px' }}>
-                Reportes
-              </h2>
-              <p style={{ color: '#666', marginBottom: '16px' }}>
-                Los reportes semanales y mensuales estarán disponibles próximamente.
-              </p>
-            </div>
-          )}
-        </div>
+                <section className="sd-card" aria-labelledby="sd-keywords-title">
+                  <div className="sd-section-head">
+                    <div>
+                      <h2 id="sd-keywords-title" className="sd-section-title">Keywords</h2>
+                      <p className="sd-section-meta">
+                        {loading ? 'Cargando…' : `Mostrando ${rows.length} de ${visible.length}`}
+                      </p>
+                    </div>
+                    <label className="sd-search">
+                      <IconSearch />
+                      <span className="sd-sr-only">Buscar keyword</span>
+                      <input
+                        type="search"
+                        placeholder="Buscar keyword"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        disabled={loading || model.keywords.length === 0}
+                      />
+                    </label>
+                  </div>
+                  {tableArea}
+                </section>
+              </>
+            )}
+          </div>
+        </main>
       </div>
     </div>
-  );
-}
-
-function DomainTable({ rows }) {
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-      <thead>
-        <tr>
-          <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-            Keyword
-          </th>
-          <th style={{ background: '#f9f9f9', padding: '12px', textAlign: 'left', fontSize: '11px', color: '#666', fontWeight: 600, borderBottom: '2px solid #e2e8f0' }}>
-            Posición
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map(kw => (
-          <tr key={kw.key} style={{ borderBottom: '1px solid #e2e8f0' }}>
-            <td style={{ padding: '12px', fontSize: '13px' }}>{kw.keyword}</td>
-            <td style={{ padding: '12px', fontSize: '13px', color: positionColor(kw), fontWeight: 'bold' }}>
-              {positionText(kw)}
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
