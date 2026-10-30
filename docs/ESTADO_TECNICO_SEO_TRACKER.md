@@ -51,7 +51,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 
 ## 3. Stack y mapa de código
 
-**Stack:** Next.js 16.4.3 (App Router, `cacheComponents: true`), React 19.3, Supabase JS 2, Vercel (cron). Dependencias sin uso activo en el flujo actual: `googleapis`, `google-auth-library`, `playwright`, `serpapi`, `axios`, `jsonwebtoken`.
+**Stack:** Next.js 16.4.3 (App Router, `cacheComponents: true`), React 19.3, Supabase JS 2, Vercel (cron). Dependencias `googleapis`, `google-auth-library`, `playwright`, `serpapi`, `axios` y `jsonwebtoken`: solo las importan scripts y ficheros legacy, no las rutas activas.
 
 **Rutas (`app/`):**
 - `page.jsx` → redirección a `/dashboard` (E1).
@@ -79,7 +79,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 
 **Configuración:** `vercel.json` con cron `0 6 * * 1` (`/api/cron/track-keywords`). Protegido con `CRON_SECRET` (Bearer).
 
-**CI:** `.github/workflows` ejecuta ESLint en archivos cambiados y comprobaciones de sintaxis (PR #3). No hay despliegue automático.
+**CI:** el único workflow es `.github/workflows/pr-quality.yml` (ESLint en archivos cambiados y sintaxis de scripts, PR #3). No hay workflow de despliegue.
 
 ---
 
