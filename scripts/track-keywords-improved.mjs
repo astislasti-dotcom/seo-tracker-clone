@@ -28,7 +28,7 @@ const supabase = createClient(
   env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-const keywordsPath = path.join(__dirname, '..', 'public', 'keywords.json');
+const keywordsPath = path.join(__dirname, '..', 'data', 'keywords.json');
 const keywords = JSON.parse(fs.readFileSync(keywordsPath, 'utf8'));
 
 const DOMAINS = ['3av.events', 'astisl.es'];

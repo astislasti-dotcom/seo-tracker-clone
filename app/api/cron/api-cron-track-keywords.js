@@ -49,7 +49,7 @@ export default async function handler(req, res) {
 
   try {
     // Load keywords from public folder
-    const keywordsPath = path.join(process.cwd(), 'public', 'keywords.json');
+    const keywordsPath = path.join(process.cwd(), 'data', 'keywords.json');
     const keywords = JSON.parse(fs.readFileSync(keywordsPath, 'utf8'));
 
     console.log('🔍 Starting daily keyword tracking...');

@@ -5,11 +5,14 @@ import { createClient } from '@supabase/supabase-js';
 import './dashboard.css';
 import { buildDashboardModel, DISPLAY, summarizeKeywords } from '../../lib/keywords/measurements.mjs';
 import { brandLabel, formatMeasurementDate, measurementSubtitle } from '../../lib/keywords/labels.mjs';
-import { HISTORY_ORDER, readAllRows } from '../../lib/keywords/paginate.mjs';
+import { readAllRows } from '../../lib/keywords/paginate.mjs';
 
+// The anon client is used only for the owner's session. Table data is read through the
+// owner-only server route /api/keyword-tracking, never directly from the database.
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  { auth: { persistSession: true, autoRefreshToken: true } }
 );
 
 const LOADING_MODEL = {
@@ -20,16 +23,21 @@ const LOADING_MODEL = {
   lastMeasuredAt: null,
 };
 
-// Complete history, read page by page. The exact total is requested so that a silent
-// server-side row cap is detected and reported instead of showing partial data.
-const fetchHistoryPage = async (from, to) => {
-  let query = supabase.from('keyword_tracking').select('*', { count: 'exact' });
-  // Unique, stable order (ends with the primary key) so offset pages never overlap or skip.
-  for (const column of HISTORY_ORDER) {
-    query = query.order(column, { ascending: true });
+// Complete history, read page by page through the owner-only API. The server returns the
+// exact total, so a silent row cap is detected and reported instead of partial data.
+// `state.unauthorized` is set when the server rejects the owner's token.
+const makeHistoryFetcher = (token, state) => async (from, to) => {
+  const response = await fetch(`/api/keyword-tracking?from=${from}&to=${to}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  if (response.status === 401 || response.status === 403) {
+    state.unauthorized = true;
+    return { data: null, error: { status: response.status }, count: null };
   }
-  const { data, error, count } = await query.range(from, to);
-  return { data, error, count };
+  if (!response.ok) return { data: null, error: { status: response.status }, count: null };
+  const body = await response.json();
+  return { data: body.data, error: null, count: body.count };
 };
 
 const BRANDS = [
@@ -160,17 +168,46 @@ export default function Dashboard() {
     let cancelled = false;
 
     const load = async () => {
-      let catalogRaw;
+      // 1) Session first. Without it, no catalog and no measurement is requested or shown.
+      let session = null;
       try {
-        const response = await fetch('/keywords.json');
-        if (!response.ok) throw new Error('catalog_http_error');
-        catalogRaw = await response.json();
+        ({ data: { session } } = await supabase.auth.getSession());
       } catch {
+        session = null;
+      }
+      if (!session?.access_token) {
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } }));
+        return;
+      }
+
+      // 2) Catalog from the owner-only API (never from public/).
+      const state = { unauthorized: false };
+      let catalogRaw = null;
+      try {
+        const response = await fetch('/api/keyword-catalog', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        if (response.status === 401 || response.status === 403) state.unauthorized = true;
+        else if (response.ok) catalogRaw = await response.json();
+      } catch {
+        catalogRaw = null;
+      }
+      if (state.unauthorized) {
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } }));
+        return;
+      }
+      if (!catalogRaw) {
         if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: null }));
         return;
       }
 
-      const read = await readAllRows(fetchHistoryPage);
+      // 3) Measurements through the owner-only history route.
+      const read = await readAllRows(makeHistoryFetcher(session.access_token, state));
+      if (state.unauthorized) {
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } }));
+        return;
+      }
       if (!read.ok) console.error('keyword_tracking read incomplete or failed:', read.reason);
       if (!cancelled) setModel(buildDashboardModel({ catalogRaw, read }));
     };
@@ -232,7 +269,16 @@ export default function Dashboard() {
   const measurementBanner = STATUS_MESSAGES[model.status];
 
   let tableArea;
-  if (model.status === 'catalog_error') {
+  if (model.status === 'auth_required') {
+    tableArea = (
+      <StateCard
+        icon={<IconAlert />}
+        title="Inicia sesión para ver el panel"
+        text="El panel es solo para la persona responsable. Si ya has iniciado sesión, la sesión puede haber caducado."
+        action={<a className="sd-button" href="/login">Ir al acceso</a>}
+      />
+    );
+  } else if (model.status === 'catalog_error') {
     tableArea = (
       <StateCard
         icon={<IconAlert />}

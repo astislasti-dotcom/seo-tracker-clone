@@ -33,7 +33,7 @@ const supabase = createClient(
 );
 
 // Load keywords
-const keywordsPath = path.join(__dirname, '..', 'public', 'keywords.json');
+const keywordsPath = path.join(__dirname, '..', 'data', 'keywords.json');
 const keywords = JSON.parse(fs.readFileSync(keywordsPath, 'utf8'));
 
 // Load Google credentials

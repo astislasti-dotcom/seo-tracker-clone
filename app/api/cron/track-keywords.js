@@ -48,7 +48,7 @@ async function searchKeywordOnGoogle(keyword) {
 async function trackKeywords() {
   try {
     // Load keywords from JSON
-    const keywordsPath = path.join(process.cwd(), 'public', 'keywords.json');
+    const keywordsPath = path.join(process.cwd(), 'data', 'keywords.json');
     const keywords = JSON.parse(fs.readFileSync(keywordsPath, 'utf8'));
 
     const timestamp = new Date();
