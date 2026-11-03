@@ -1,5 +1,10 @@
 {
-  "_nota": "Identificadores de propiedad de Search Console. siteUrl = null hasta confirmar el formato exacto (sc-domain:dominio o prefijo https://). Mientras sea null, la API responde 503 property_not_configured.",
-  "astisl.es": { "brand": "ASTI", "siteUrl": null },
-  "3av.events": { "brand": "3AV", "siteUrl": null }
+  "astisl.es": {
+    "brand": "ASTI",
+    "siteUrl": "https://astisl.es/"
+  },
+  "3av.events": {
+    "brand": "3AV",
+    "siteUrl": "sc-domain:3av.events"
+  }
 }

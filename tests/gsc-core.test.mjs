@@ -268,3 +268,39 @@ test('the route wires only the server environment and the owner gate', async () 
   assert.equal(source.includes('GSC_SERVICE_ACCOUNT_JSON'), true);
   assert.equal(/return\s+Response\.json\(\s*process\.env/.test(source), false);
 });
+
+// ---- response shape: wrong responses are never read as "no data" ----
+
+test('only documented empty shapes count as no data', () => {
+  assert.equal(buildTotals({}).noData, true);
+  assert.equal(buildTotals({ rows: [] }).noData, true);
+  assert.equal(buildTotals({ metadata: { first_incomplete_date: '2026-10-31' } }).noData, true);
+  assert.equal(buildTotals({ responseAggregationType: 'byProperty', rows: [] }).noData, true);
+});
+
+test('non-object, array, non-array rows and unknown fields are invalid responses', () => {
+  for (const bad of [null, undefined, 'oops', 42, [], [{ clicks: 1 }]]) {
+    assert.equal(buildTotals(bad).code, 'invalid_response', JSON.stringify(bad));
+  }
+  assert.equal(buildTotals({ rows: 'x' }).code, 'invalid_response');
+  assert.equal(buildTotals({ rows: null }).code, 'invalid_response');
+  assert.equal(buildTotals({ error: { code: 500 } }).code, 'invalid_response');
+  assert.equal(buildTotals({ rows: ['not-an-object'] }).code, 'invalid_response');
+});
+
+test('a malformed response reaches the handler as 502, not as a 200 with zeros', async () => {
+  const transport = async () => 'garbage';
+  const res = await handleSummary(req('?brand=astisl.es&period=28'), deps({ transport }));
+  assert.equal(res.status, 502);
+  assert.equal((await res.json()).error, 'invalid_response');
+});
+
+// ---- the confirmed property configuration ----
+
+test('the committed property configuration resolves to the confirmed identifiers', async () => {
+  const config = JSON.parse(await readFile(new URL('../config/gsc-properties.json', import.meta.url), 'utf8'));
+  const asti = resolveProperty(config, 'astisl.es');
+  const av = resolveProperty(config, '3av.events');
+  assert.deepEqual([asti.ok, asti.brand, asti.siteUrl], [true, 'ASTI', 'https://astisl.es/']);
+  assert.deepEqual([av.ok, av.brand, av.siteUrl], [true, '3AV', 'sc-domain:3av.events']);
+});
