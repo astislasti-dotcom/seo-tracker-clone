@@ -2,7 +2,7 @@
 
 **Documento operativo.** Fuente de referencia técnica para sesiones futuras. No sustituye a [`CLAUDE.md`](../CLAUDE.md), [`AGENTS.md`](../AGENTS.md) ni [`docs/PROTOCOLO_COLABORACION.md`](PROTOCOLO_COLABORACION.md); léelos antes de actuar.
 
-- **Fecha de verificación:** 30/10/2026 (tarde).
+- **Última actualización:** 03/11/2026. Corrección del estado de la migración del PR #9 comunicada por ChatGPT. Las cifras de auditoría siguen fechadas el 30/10/2026.
 - **`main`:** [`21279f9`](https://github.com/astislasti-dotcom/seo-tracker-clone/commit/21279f9) (fusión del PR #14).
 - **Rama de trabajo E1:** `claude/e1-access-unification`, [PR #16](https://github.com/astislasti-dotcom/seo-tracker-clone/pull/16) en **borrador, sin fusionar**. Commit anterior a este documento: `0a9614c`.
 - **Issue de coordinación:** [#15](https://github.com/astislasti-dotcom/seo-tracker-clone/issues/15) (producto V1, plan v3, calendario 2–6 de noviembre).
@@ -31,7 +31,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 | Integridad de catálogo y mediciones verificadas | **Fusionado** | PR #13 (`5bcc1d8`) |
 | Paginación completa con conteo exacto y orden total | **Fusionado** | PR #13 (`0698693`) |
 | Rediseño visual del dashboard, marca por fecha y móvil | **Fusionado** | PR #14 (`21279f9`) |
-| Migración RLS de `keyword_tracking` (PR #9) | **Fusionado en el repositorio; NO aplicada** en Supabase | PR #9; `supabase/migrations/20261030083000_*` |
+| Migración RLS de `keyword_tracking` (PR #9) | **Fusionado y aplicada en Supabase** (comprobación de ChatGPT del 03/11/2026; no re-verificada desde Claude) | PR #9; `supabase/migrations/20261030083000_*` |
 | E1: `/` redirige a `/dashboard` | **En PR #16** | `app/page.jsx` |
 | E1: `/api/keywords` retirado (410) | **En PR #16** | `app/api/keywords/route.js` |
 | E1: lectura owner-only en servidor (`/api/keyword-tracking`) | **En PR #16**, probado offline; **no verificado con sesión real** | `app/api/keyword-tracking/route.js`, `lib/auth/*` |
@@ -86,7 +86,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 ## 4. Arquitectura: actual y objetivo
 
 **Actual (en `main`):**
-- Navegador → Supabase REST con clave anon → `keyword_tracking` y `keywords`. **Lectura pública vigente** (política `keyword_tracking_lectura_temporal` del PR #9 aplicada según la auditoría; ver §5).
+- Navegador → Supabase REST con clave anon → `keyword_tracking` y `keywords`. **Lectura pública vigente** (política `keyword_tracking_lectura_temporal` del PR #9, aplicada en Supabase según ChatGPT; ver §5).
 - `keywords.json` estático para el catálogo.
 - Sin autenticación en la aplicación. Sin protección en Vercel verificada.
 
@@ -110,7 +110,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 **Estado de seguridad (auditoría de solo lectura del 30/10/2026, [`docs/SEGURIDAD_SUPABASE_KEYWORD_TRACKING.md`](SEGURIDAD_SUPABASE_KEYWORD_TRACKING.md)):**
 - `keyword_tracking`: RLS desactivado antes de la migración del PR #9; `anon` con privilegios de escritura. **Riesgo alto de integridad y de confidencialidad.**
 - `service_role`: `BYPASSRLS = true` y `INSERT` (confirmado el 30/10/2026).
-- Tras la migración del PR #9: RLS activo, escrituras cliente revocadas, **lectura pública temporal** (`keyword_tracking_lectura_temporal`, `USING (true)`). Aplicación en producción **no confirmada**; la auditoría describe el estado previo.
+- Tras la migración del PR #9: RLS activo, escrituras cliente revocadas, **lectura pública temporal** (`keyword_tracking_lectura_temporal`, `USING (true)`). **Aplicada en Supabase** según la comprobación de ChatGPT del 03/11/2026. Claude no la ha verificado desde esta sesión. La auditoría del 30/10/2026 describe el estado previo a la aplicación.
 - `public.rls_auto_enable()`: función SECURITY DEFINER ejecutable por roles cliente. Asunto separado, sin tratar.
 
 **SQL pendiente** (`supabase/pending/20261030_revoke_keyword_tracking_public_read.sql`): retira la política temporal y revoca `SELECT` a `anon`/`authenticated`. Probado en PostgreSQL 16 desechable con datos ficticios: escrituras denegadas a clientes, lectura denegada a clientes, `service_role` con acceso, 256 filas conservadas, segunda ejecución detenida en el preflight. **No aplicado. Requiere autorización expresa y, antes, verificar el acceso del propietario y la ruta protegida.**
@@ -192,7 +192,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 
 ## 10. Handoff compacto
 
-- **Cierto hoy:** `main` en `21279f9`; 102 tests pasan; PR #16 en borrador con E1 implementada y probada offline y en PostgreSQL desechable.
+- **Cierto hoy:** `main` en `21279f9`; 102 tests pasan; PR #16 en borrador con E1 implementada y probada offline y en PostgreSQL desechable; migración del PR #9 aplicada en Supabase (según ChatGPT).
 - **No cierto todavía:** E1 cerrada (faltan activaciones y verificaciones de producción); lectura pública de `keyword_tracking` vigente; Vercel Authentication no activada; SQL de revocación no aplicado.
 - **Bloqueado:** activar cualquier servicio real; conectar GSC; cron bajo protección; DataForSEO.
 - **Siguiente paso:** cerrar E1 en PR #16 (revisión de ChatGPT y decisiones del propietario); después E2 offline.
