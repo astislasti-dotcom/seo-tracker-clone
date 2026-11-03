@@ -38,7 +38,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Load keywords
-const keywordsPath = path.join(__dirname, '..', 'public', 'keywords.json');
+const keywordsPath = path.join(__dirname, '..', 'data', 'keywords.json');
 const keywords = JSON.parse(fs.readFileSync(keywordsPath, 'utf8'));
 
 const DOMAINS = ['3av.events', 'astisl.es'];

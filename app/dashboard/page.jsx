@@ -168,16 +168,7 @@ export default function Dashboard() {
     let cancelled = false;
 
     const load = async () => {
-      let catalogRaw;
-      try {
-        const response = await fetch('/keywords.json');
-        if (!response.ok) throw new Error('catalog_http_error');
-        catalogRaw = await response.json();
-      } catch {
-        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: null }));
-        return;
-      }
-
+      // 1) Session first. Without it, no catalog and no measurement is requested or shown.
       let session = null;
       try {
         ({ data: { session } } = await supabase.auth.getSession());
@@ -185,14 +176,36 @@ export default function Dashboard() {
         session = null;
       }
       if (!session?.access_token) {
-        if (!cancelled) setModel(buildDashboardModel({ catalogRaw, read: { ok: false, reason: 'unauthorized' } }));
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } }));
         return;
       }
 
+      // 2) Catalog from the owner-only API (never from public/).
       const state = { unauthorized: false };
+      let catalogRaw = null;
+      try {
+        const response = await fetch('/api/keyword-catalog', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: 'no-store',
+        });
+        if (response.status === 401 || response.status === 403) state.unauthorized = true;
+        else if (response.ok) catalogRaw = await response.json();
+      } catch {
+        catalogRaw = null;
+      }
+      if (state.unauthorized) {
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } }));
+        return;
+      }
+      if (!catalogRaw) {
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: null }));
+        return;
+      }
+
+      // 3) Measurements through the owner-only history route.
       const read = await readAllRows(makeHistoryFetcher(session.access_token, state));
       if (state.unauthorized) {
-        if (!cancelled) setModel(buildDashboardModel({ catalogRaw, read: { ok: false, reason: 'unauthorized' } }));
+        if (!cancelled) setModel(buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } }));
         return;
       }
       if (!read.ok) console.error('keyword_tracking read incomplete or failed:', read.reason);

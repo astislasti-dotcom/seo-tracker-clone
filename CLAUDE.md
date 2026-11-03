@@ -68,7 +68,7 @@ Ambos motores pueden programar y revisar: el reparto anterior es una organizaci�
 | Dashboard actual con datos | `app/dashboard/page.jsx` |
 | Portada y componentes alternativos | `app/page.jsx`, `app/components/Dashboard.jsx`, `KeywordTable.jsx`, `StatsCards.jsx` |
 | Estilos y tipografía | `app/globals.css`, `app/components/globals.css`, `app/layout.jsx` |
-| Keywords iniciales y segmentación | `public/keywords.json`, `keywords-31.json`, `keywords-31.csv` |
+| Keywords iniciales y segmentación | `data/keywords.json` (no publicado; servido solo por API del propietario), `keywords-31.json`, `keywords-31.csv` |
 | API de keywords | `app/api/keywords/route.js` |
 | Seguimiento y experimentos previos | `scripts/track-keywords*.mjs` |
 | Cron y rutas de seguimiento | `vercel.json`, `app/api/cron/` |

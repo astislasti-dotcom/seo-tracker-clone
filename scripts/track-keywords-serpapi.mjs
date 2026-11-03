@@ -66,7 +66,7 @@ if (!SERPAPI_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Load keywords
-const keywordsPath = path.join(__dirname, '..', 'public', 'keywords.json');
+const keywordsPath = path.join(__dirname, '..', 'data', 'keywords.json');
 const keywords = JSON.parse(fs.readFileSync(keywordsPath, 'utf8'));
 
 async function getKeywordPosition(keyword, targetDomain) {

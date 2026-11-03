@@ -110,3 +110,69 @@ test('dashboard no longer queries the database directly with the anon client', a
   assert.equal(source.includes(".from('keyword_tracking')"), false);
   assert.equal(source.includes("/api/keyword-tracking?from="), true);
 });
+
+// ---- Catalog exposure (E1 correction) ----
+import { existsSync } from 'node:fs';
+import { GET as getCatalog } from '../app/api/keyword-catalog/route.js';
+
+test('catalog file is no longer published under public/', () => {
+  assert.equal(existsSync(new URL('public/keywords.json', ROOT)), false);
+  assert.equal(existsSync(new URL('data/keywords.json', ROOT)), true);
+});
+
+test('anonymous request to the catalog API gets 401 and no keyword data', async () => {
+  const saved = process.env.DASHBOARD_OWNER_EMAIL;
+  process.env.DASHBOARD_OWNER_EMAIL = OWNER;
+  try {
+    const res = await getCatalog(new Request('http://localhost/api/keyword-catalog'));
+    assert.equal(res.status, 401);
+    const body = await res.text();
+    assert.equal(body.includes('keyword'), false);
+    assert.equal(body.includes('domain'), false);
+  } finally {
+    if (saved === undefined) delete process.env.DASHBOARD_OWNER_EMAIL; else process.env.DASHBOARD_OWNER_EMAIL = saved;
+  }
+});
+
+test('catalog API fails closed (503) when the owner is not configured', async () => {
+  const saved = process.env.DASHBOARD_OWNER_EMAIL;
+  delete process.env.DASHBOARD_OWNER_EMAIL;
+  try {
+    const res = await getCatalog(new Request('http://localhost/api/keyword-catalog', { headers: { authorization: 'Bearer x' } }));
+    assert.equal(res.status, 503);
+  } finally {
+    if (saved !== undefined) process.env.DASHBOARD_OWNER_EMAIL = saved;
+  }
+});
+
+test('dashboard checks the session before any catalog or measurement request', async () => {
+  const source = await readFile(new URL('app/dashboard/page.jsx', ROOT), 'utf8');
+  assert.equal(source.includes("fetch('/keywords.json')"), false);
+  const sessionAt = source.indexOf('getSession()');
+  const catalogAt = source.indexOf('/api/keyword-catalog');
+  const historyAt = source.indexOf('makeHistoryFetcher(session.access_token');
+  assert.ok(sessionAt > 0 && catalogAt > sessionAt, 'session must be checked before the catalog request');
+  assert.ok(historyAt > catalogAt, 'catalog must be loaded before measurements');
+});
+
+test('without a session the model is auth_required, even with no catalog', () => {
+  const model = buildDashboardModel({ catalogRaw: null, read: { ok: false, reason: 'unauthorized' } });
+  assert.equal(model.status, 'auth_required');
+  assert.deepEqual(model.keywords, []);
+});
+
+test('legacy scripts and cron files read the catalog from data/, not public/', async () => {
+  const files = [
+    'app/api/cron/api-cron-track-keywords.js',
+    'app/api/cron/track-keywords.js',
+    'scripts/track-keywords-gsc.mjs',
+    'scripts/track-keywords.mjs',
+    'scripts/track-keywords-serpapi.mjs',
+    'scripts/track-keywords-improved.mjs',
+  ];
+  for (const file of files) {
+    const source = await readFile(new URL(file, ROOT), 'utf8');
+    assert.equal(source.includes("'public', 'keywords.json'"), false, `${file} still points to public/`);
+    assert.equal(source.includes("'data', 'keywords.json'"), true, `${file} must read data/keywords.json`);
+  }
+});

@@ -55,7 +55,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 
 **Rutas (`app/`):**
 - `page.jsx` → redirección a `/dashboard` (E1).
-- `dashboard/page.jsx` → panel. Lee el catálogo de `public/keywords.json` y las mediciones de `/api/keyword-tracking` (E1).
+- `dashboard/page.jsx` → panel. Lee el catálogo de `/api/keyword-catalog` y las mediciones de `/api/keyword-tracking`, ambas solo con sesión del propietario (E1). El catálogo está en `data/keywords.json`, fuera de `public/`.
 - `login/page.jsx` → acceso del propietario (E1).
 - `api/keyword-tracking/route.js` → lectura owner-only (E1).
 - `api/keywords/route.js` → 410, retirada (E1).
@@ -87,7 +87,7 @@ Leyenda de estado: **Fusionado** (en `main`) · **En PR** (existe, sin fusionar)
 
 **Actual (en `main`):**
 - Navegador → Supabase REST con clave anon → `keyword_tracking` y `keywords`. **Lectura pública vigente** (política `keyword_tracking_lectura_temporal` del PR #9, aplicada en Supabase según ChatGPT; ver §5).
-- `keywords.json` estático para el catálogo.
+- Catálogo en `data/keywords.json` (fuera de `public/`). Tras la corrección de E1 solo se sirve con sesión del propietario.
 - Sin autenticación en la aplicación. Sin protección en Vercel verificada.
 
 **Objetivo tras E1 (en PR #16, pendiente de activación):**
