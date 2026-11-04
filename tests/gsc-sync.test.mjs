@@ -69,7 +69,7 @@ const noNetwork = async () => {
 
 // In-memory repository with the same guards as the SQL: a provisional-only UPDATE and an
 // insert that never overwrites.
-function memoryRepo({ failInsert = false, failStart = false } = {}) {
+function memoryRepo({ failInsert = false, failStart = false, failFinish = null } = {}) {
   const rows = new Map();
   const runs = new Map();
   let seq = 0;
@@ -106,6 +106,7 @@ function memoryRepo({ failInsert = false, failStart = false } = {}) {
       return id;
     },
     async finishRun(id, patch) {
+      if (failFinish === patch.status) throw new Error('log down');
       runs.set(id, { ...runs.get(id), ...patch });
     },
   };
@@ -309,6 +310,62 @@ test('syncProperty: an invalid Google response aborts before any write', async (
   assert.equal(repo.rows.size, 0);
 });
 
+test('syncProperty: metrics saved but run not closed is NEVER reported as success', async () => {
+  const repo = memoryRepo({ failFinish: 'ok' });
+  const transport = gscTransport(makeDataset());
+  const result = await syncProperty({ property: property('astisl.es'), window: windowFor(28), credentials: {}, transport, repo, now: NOW });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'run_log_failed');
+  assert.equal(result.metricsSaved, true);
+  assert.equal(result.runLogged, false);
+  assert.equal(result.inserted, 28, 'the metrics really were written');
+  assert.equal(repo.rows.size, 28);
+  assert.equal([...repo.runs.values()][0].status, 'running', 'the run stays open, as documented');
+});
+
+test('syncProperty: a closed run reports metricsSaved and runLogged both true', async () => {
+  const repo = memoryRepo();
+  const result = await syncProperty({ property: property('astisl.es'), window: windowFor(28), credentials: {}, transport: gscTransport(makeDataset()), repo, now: NOW });
+  assert.equal(result.ok, true);
+  assert.equal(result.metricsSaved, true);
+  assert.equal(result.runLogged, true);
+  assert.equal(result.code, undefined);
+});
+
+test('syncProperty: when logging an error also fails, the original code is kept and runLogged is false', async () => {
+  const repo = memoryRepo({ failFinish: 'error' });
+  const transport = gscTransport(makeDataset(), { errorAt: 1, error: Object.assign(new Error('quota'), { code: 429 }) });
+  const result = await syncProperty({ property: property('astisl.es'), window: windowFor(28), credentials: {}, transport, repo, now: NOW });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'quota_exceeded');
+  assert.equal(result.metricsSaved, false);
+  assert.equal(result.runLogged, false);
+  assert.equal(repo.rows.size, 0);
+});
+
+test('syncProperty: the run is registered before any Google call', async () => {
+  const order = [];
+  const repo = memoryRepo();
+  const startRun = repo.startRun;
+  repo.startRun = async (run) => {
+    order.push('startRun');
+    return startRun(run);
+  };
+  const transport = async (args) => {
+    order.push(`google:${args.body.dataState}`);
+    return {};
+  };
+  await syncProperty({ property: property('astisl.es'), window: windowFor(28), credentials: {}, transport, repo, now: NOW });
+  assert.equal(order[0], 'startRun');
+  assert.equal(order[1], 'google:final');
+});
+
+test('syncProperty: if the initial run record cannot be written, Google is never called', async () => {
+  const repo = memoryRepo({ failStart: true });
+  const result = await syncProperty({ property: property('astisl.es'), window: windowFor(28), credentials: {}, transport: noNetwork, repo, now: NOW });
+  assert.deepEqual([result.ok, result.code, result.metricsSaved], [false, 'storage_error', false]);
+});
+
 test('syncProperty: a storage failure is reported as a code, not as the raw error', async () => {
   const repo = memoryRepo({ failInsert: true });
   const transport = gscTransport(makeDataset());
@@ -410,6 +467,24 @@ test('handleSync: brand=all syncs both properties and reports partial failure as
   assert.equal(body.ok, false);
   assert.deepEqual(body.results.map((r) => [r.domain, r.ok]), [['astisl.es', false], ['3av.events', true]]);
   assert.equal(body.results[0].code, 'property_not_found');
+});
+
+test('handleSync: run_log_failed returns 502 with metricsSaved true and never ok', async () => {
+  const res = await handleSync(post('?brand=astisl.es&days=28'), handlerDeps({ createRepo: () => memoryRepo({ failFinish: 'ok' }) }));
+  const body = await res.json();
+  assert.equal(res.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.results[0].code, 'run_log_failed');
+  assert.equal(body.results[0].metricsSaved, true);
+  assert.equal(body.results[0].runLogged, false);
+});
+
+test('static: the write-order contract is documented in sync.mjs and sync-handler.mjs', async () => {
+  const sync = await readFile(new URL('../lib/gsc/sync.mjs', import.meta.url), 'utf8');
+  const handler = await readFile(new URL('../lib/gsc/sync-handler.mjs', import.meta.url), 'utf8');
+  assert.match(sync, /startRun[\s\S]*ANTES de cualquier llamada a\s*\n\/\/\s*Google/);
+  assert.match(sync, /metricsSaved[\s\S]*runLogged/);
+  assert.match(handler, /startRun escribe el registro inicial[\s\S]*ANTES de\s*\n?\/\/\s*consultar Google/);
 });
 
 // ---------- adaptador de Supabase (llamadas simuladas, sin red) ----------
