@@ -1,5 +1,6 @@
 -- Prueba en PostgreSQL DESECHABLE (nunca contra Supabase). Datos ficticios.
--- Ejecutar: psql -v ON_ERROR_STOP=1 -f supabase/pending/tests/gsc_daily_metrics.test.sql
+-- No ejecutar directamente: usar supabase/pending/tests/run.sh, que pasa la variable :migration
+-- y construye los casos negativos.
 -- Simula los roles de Supabase: anon, authenticated, service_role (BYPASSRLS) y los
 -- privilegios por defecto que Supabase concede a tablas nuevas. Todo se revierte al final.
 
@@ -17,7 +18,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authentic
 
 BEGIN;
 
-\i supabase/pending/20261104_gsc_daily_metrics.sql
+\i :migration
 
 -- 1) La migración deja RLS activo y sin políticas.
 DO $$ BEGIN
@@ -27,8 +28,27 @@ DO $$ BEGIN
   RAISE NOTICE 'OK 1: RLS activo, sin políticas';
 END $$;
 
+-- 1b) Privilegios: anon, authenticated y PUBLIC sin ningún privilegio en ninguna de las dos tablas.
+DO $$
+DECLARE
+  rel regclass;
+  priv text;
+  acl_entries integer;
+BEGIN
+  FOREACH rel IN ARRAY ARRAY['public.gsc_daily_metrics'::regclass, 'public.gsc_sync_runs'::regclass] LOOP
+    FOREACH priv IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] LOOP
+      ASSERT NOT has_table_privilege('anon', rel, priv), format('anon has %s on %s', priv, rel);
+      ASSERT NOT has_table_privilege('authenticated', rel, priv), format('authenticated has %s on %s', priv, rel);
+    END LOOP;
+    SELECT count(*) INTO acl_entries FROM pg_class c CROSS JOIN LATERAL aclexplode(c.relacl) acl
+     WHERE c.oid = rel AND (acl.grantee = 0 OR acl.grantee IN (SELECT oid FROM pg_roles WHERE rolname IN ('anon','authenticated')));
+    ASSERT acl_entries = 0, format('ACL entries for PUBLIC/anon/authenticated on %s', rel);
+  END LOOP;
+  RAISE NOTICE 'OK 1b: anon, authenticated y PUBLIC sin privilegios en ninguna tabla';
+END $$;
+
 -- 2) Idempotencia de la migración: aplicarla de nuevo no falla ni cambia el esquema.
-\i supabase/pending/20261104_gsc_daily_metrics.sql
+\i :migration
 \echo 'OK 2: segunda aplicación de la migración sin error'
 
 -- 3) service_role escribe con upsert; repetir el mismo rango no duplica filas.
