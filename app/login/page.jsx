@@ -47,7 +47,8 @@ export default function LoginPage() {
 
   return (
     <main style={{ maxWidth: 420, margin: '10vh auto', padding: '0 16px', fontFamily: 'inherit' }}>
-      <h1 style={{ fontSize: 20, marginBottom: 16 }}>Acceso al panel</h1>
+      <h1 style={{ fontSize: 20, marginBottom: 4 }}>Panel interno · ASTI y 3AV Events</h1>
+      <p style={{ marginTop: 0, marginBottom: 16, fontSize: 14 }}>Acceso restringido al personal autorizado de SEO Tracker.</p>
       <form onSubmit={onSubmit}>
         <label htmlFor="owner-email" style={{ display: 'block', marginBottom: 6 }}>Correo</label>
         <input
