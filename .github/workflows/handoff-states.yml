@@ -29,7 +29,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      pull-requests: read
+      pull-requests: write
     steps:
       - name: Obtener la rama por defecto (no el código de la PR)
         uses: actions/checkout@v7
