@@ -22,18 +22,18 @@ function scopedDate(brand) {
 
 test('regression: selecting 3AV shows 3AV date, not the global ASTI date', () => {
   const text = measurementSubtitle({ status: 'ok', lastMeasuredAt: scopedDate('3av.events'), brand: '3av.events' });
-  assert.equal(text, 'Última medición verificada (3AV Events): 17/9/2026');
+  assert.equal(text, 'Última medición SERP verificada (3AV Events): 17/9/2026');
   assert.equal(text.includes('8/10/2026'), false);
 });
 
 test('regression: selecting ASTI shows ASTI date', () => {
   const text = measurementSubtitle({ status: 'ok', lastMeasuredAt: scopedDate('astisl.es'), brand: 'astisl.es' });
-  assert.equal(text, 'Última medición verificada (ASTI): 8/10/2026');
+  assert.equal(text, 'Última medición SERP verificada (ASTI): 8/10/2026');
 });
 
 test('"Todas" shows the most recent date across both brands', () => {
   const text = measurementSubtitle({ status: 'ok', lastMeasuredAt: scopedDate('all'), brand: 'all' });
-  assert.equal(text, 'Última medición verificada (Todas las marcas): 8/10/2026');
+  assert.equal(text, 'Última medición SERP verificada (Todas las marcas): 8/10/2026');
 });
 
 test('a brand with no verified measurement never inherits the other brand date', () => {
@@ -41,18 +41,18 @@ test('a brand with no verified measurement never inherits the other brand date',
   const { lastMeasuredAt } = summarizeKeywords(onlyUnverified);
   assert.equal(lastMeasuredAt, null);
   const text = measurementSubtitle({ status: 'ok', lastMeasuredAt, brand: '3av.events' });
-  assert.equal(text, 'Sin mediciones verificadas (3AV Events)');
+  assert.equal(text, 'Sin mediciones SERP verificadas (3AV Events)');
 });
 
 test('loading and error statuses keep their reliable messages', () => {
-  assert.equal(measurementSubtitle({ status: 'loading', lastMeasuredAt: null, brand: 'all' }), 'Cargando mediciones…');
+  assert.equal(measurementSubtitle({ status: 'loading', lastMeasuredAt: null, brand: 'all' }), 'Cargando mediciones SERP…');
   assert.equal(
     measurementSubtitle({ status: 'measurements_error', lastMeasuredAt: '2026-10-08T06:00:00Z', brand: 'all' }),
-    'Mediciones no disponibles en esta carga'
+    'Mediciones SERP no disponibles en esta carga'
   );
   assert.equal(
     measurementSubtitle({ status: 'catalog_error', lastMeasuredAt: null, brand: 'all' }),
-    'Mediciones no disponibles en esta carga'
+    'Mediciones SERP no disponibles en esta carga'
   );
 });
 
