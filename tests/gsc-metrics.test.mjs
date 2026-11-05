@@ -230,6 +230,27 @@ test('handleMetrics: storage error → 502 with a code and no raw message', asyn
   assert.ok(!text.includes(SERVICE_KEY_FIXTURE));
 });
 
+test('handleMetrics: error messages describe reading, not saving or syncing', async () => {
+  const storage = await (await handleMetrics(get('?brand=all'), deps({ createRepo: () => fakeRepo([], { fail: true }) }))).json();
+  assert.equal(storage.message, 'No se pudieron leer las métricas almacenadas. Inténtalo de nuevo más tarde.');
+  assert.doesNotMatch(storage.message, /guardar|sincroniz|Search Console/i);
+
+  const missing = await (await handleMetrics(get('?brand=all'), deps({ serviceKey: undefined }))).json();
+  assert.equal(missing.message, 'La clave de servidor de Supabase no está configurada; no se pueden leer las métricas.');
+  assert.doesNotMatch(missing.message, /sincroniz/i);
+
+  const corrupt = Array.from({ length: 8 }, () => row('astisl.es', dayOffset(0)));
+  const invalid = await (await handleMetrics(get('?brand=astisl.es&period=7'), deps({ createRepo: () => fakeRepo(corrupt) }))).json();
+  assert.equal(invalid.message, 'Los datos almacenados no tienen el formato esperado. No se muestran.');
+});
+
+test('errors.mjs keeps the sync messages unchanged for the GSC-02b endpoint', async () => {
+  const { gscErrorMessage } = await import('../lib/gsc/errors.mjs');
+  assert.match(gscErrorMessage('storage_error'), /Supabase\. Repite la sincronización/);
+  assert.match(gscErrorMessage('service_role_missing'), /la sincronización no se ha ejecutado/);
+  assert.match(gscErrorMessage('invalid_response'), /respuesta de Search Console/);
+});
+
 test('handleMetrics: more rows than properties × days → invalid_response (corrupt data is not shown)', async () => {
   const rows = [row('astisl.es', dayOffset(0)), row('astisl.es', dayOffset(-1)), row('astisl.es', dayOffset(-2))];
   const res = await handleMetrics(get('?brand=astisl.es&period=7'), deps({ createRepo: () => fakeRepo(rows) }));
