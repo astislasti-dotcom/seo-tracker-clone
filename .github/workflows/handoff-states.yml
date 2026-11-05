@@ -1,0 +1,48 @@
+# AUTOMATION-01 · Capa 1: estados de coordinación en PR. Sin IA, sin modelos, sin secretos
+# distintos de GITHUB_TOKEN. Solo cambia etiquetas estado:*; nunca fusiona ni despliega.
+#
+# Eventos: comentario creado en PR, revisión enviada y nuevo commit en la PR.
+# El job se filtra antes de asignar runner: los comentarios de issues normales no consumen minutos.
+# El código que se ejecuta es el de la rama por defecto, nunca el de la PR.
+name: Estados de coordinacion (sin IA)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: handoff-states-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply-states:
+    if: ${{ github.event_name != 'issue_comment' || github.event.issue.pull_request != null }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Obtener la rama por defecto (no el código de la PR)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Aplicar estados de coordinación
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/automation/apply-handoff-states.mjs
