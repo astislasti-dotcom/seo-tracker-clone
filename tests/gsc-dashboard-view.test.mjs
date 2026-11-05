@@ -336,6 +336,16 @@ test('chart ticks are 0, half and the rounded maximum, placed on the same scale 
   assert.equal(geo.xs.length, 7);
 });
 
+test('Y-axis ticks keep exact fractional labels for low traffic (not rounded counts)', () => {
+  const one = chartGeometry([{ date: '2026-11-05', hasRow: true, clicks: 1, partial: false }], 'clicks');
+  assert.deepEqual(one.ticks.map((t) => t.label), ['1', '0,5', '0']);
+  const five = chartGeometry([{ date: '2026-11-05', hasRow: true, clicks: 5, partial: false }], 'clicks');
+  assert.deepEqual(five.ticks.map((t) => t.label), ['5', '2,5', '0']);
+  const twentyFive = chartGeometry([{ date: '2026-11-05', hasRow: true, clicks: 21, partial: false }], 'clicks');
+  assert.deepEqual(twentyFive.ticks.map((t) => t.label), ['25', '12,5', '0']);
+  assert.equal(formatCount(1), '1', 'daily click counts are still formatted as integers');
+});
+
 test('indexAtX maps a pointer position to the nearest day and stays inside the range', () => {
   assert.equal(indexAtX(8, 7), 0);
   assert.equal(indexAtX(592, 7), 6);
