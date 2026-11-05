@@ -8,6 +8,7 @@ import { buildDashboardModel, DISPLAY, summarizeKeywords } from '../../lib/keywo
 import { brandLabel, formatMeasurementDate, measurementSubtitle } from '../../lib/keywords/labels.mjs';
 import { readAllRows } from '../../lib/keywords/paginate.mjs';
 import { MSG_LOGOUT_FAILED, signOutSafely } from '../../lib/auth/password-login.mjs';
+import GscPanel from './GscPanel.jsx';
 
 // The anon client is used only for the owner's session. Table data is read through the
 // owner-only server route /api/keyword-tracking, never directly from the database.
@@ -415,6 +416,9 @@ export default function Dashboard() {
 
             {view === 'overview' && (
               <>
+                <GscPanel supabase={supabase} brand={brand} />
+
+                <h2 className="sd-section-title sd-group-title">Posiciones verificadas (seguimiento SERP)</h2>
                 <section className="sd-kpis" aria-label="Resumen">
                   {kpis.map((k) => (
                     <KpiCard key={k.label} label={k.label} value={k.value} note={k.note} empty={k.empty} />

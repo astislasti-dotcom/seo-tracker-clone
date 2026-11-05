@@ -584,3 +584,289 @@
     animation: none;
   }
 }
+
+/* ---------- GSC-04 · Rendimiento de Search Console ---------- */
+
+.sd-group-title {
+  margin: var(--sd-space-5) 0 var(--sd-space-3);
+  font-size: 15px;
+  color: var(--sd-text-2);
+}
+
+.sd-gsc {
+  --gsc-clicks: var(--sd-accent);
+  --gsc-impr: #8a94a3;
+  margin-bottom: var(--sd-space-5);
+}
+
+.sd-gsc[data-brand='astisl.es'] {
+  --gsc-clicks: #004e5a;
+}
+
+.sd-gsc[data-brand='3av.events'] {
+  --gsc-clicks: #171717;
+}
+
+.sd-gsc-head {
+  flex-wrap: wrap;
+}
+
+.sd-gsc-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sd-space-4);
+  margin-bottom: var(--sd-space-5);
+}
+
+.sd-gsc-kpi {
+  padding: var(--sd-space-4);
+}
+
+.sd-gsc-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sd-space-5);
+}
+
+.sd-gsc-chart {
+  margin: 0;
+  min-width: 0;
+}
+
+.sd-gsc-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sd-text-2);
+  margin-bottom: var(--sd-space-2);
+}
+
+.sd-gsc-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.sd-gsc-baseline {
+  stroke: var(--sd-border);
+  stroke-width: 1;
+}
+
+.sd-gsc-chart[data-tone='clicks'] .sd-gsc-line {
+  stroke: var(--gsc-clicks);
+  fill: none;
+}
+
+.sd-gsc-chart[data-tone='impressions'] .sd-gsc-line {
+  stroke: var(--gsc-impr);
+  fill: none;
+}
+
+.sd-gsc-chart[data-tone='clicks'] .sd-gsc-dot {
+  fill: var(--gsc-clicks);
+}
+
+.sd-gsc-chart[data-tone='impressions'] .sd-gsc-dot {
+  fill: var(--gsc-impr);
+}
+
+.sd-gsc-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sd-gsc-dot {
+  stroke: none;
+}
+
+/* Día sin registro: círculo hueco en la base. Nunca un cero. */
+.sd-gsc-gap {
+  fill: var(--sd-surface);
+  stroke: var(--sd-border-strong);
+  stroke-width: 1.5;
+}
+
+.sd-gsc-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--sd-text-3);
+  margin-top: var(--sd-space-1);
+}
+
+.sd-gsc-details {
+  margin-top: var(--sd-space-4);
+  font-size: 13px;
+}
+
+.sd-gsc-details summary {
+  cursor: pointer;
+  color: var(--sd-accent-strong);
+  font-weight: 600;
+  padding: var(--sd-space-2) 0;
+}
+
+.sd-gsc-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--sd-border);
+  border-radius: var(--sd-radius-sm);
+  margin-top: var(--sd-space-2);
+}
+
+.sd-gsc-table-wrap:focus-visible {
+  outline: 2px solid var(--sd-focus);
+  outline-offset: 2px;
+}
+
+.sd-gsc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.sd-gsc-table th,
+.sd-gsc-table td {
+  padding: var(--sd-space-2) var(--sd-space-3);
+  border-bottom: 1px solid var(--sd-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sd-gsc-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--sd-surface-muted);
+  font-weight: 600;
+  color: var(--sd-text-2);
+}
+
+.sd-gsc-table tr[data-row='false'] td {
+  color: var(--sd-text-3);
+  font-style: italic;
+}
+
+.sd-gsc-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sd-space-4);
+  margin-top: var(--sd-space-5);
+}
+
+.sd-gsc-brand {
+  border: 1px solid var(--sd-border);
+  border-radius: var(--sd-radius-sm);
+  padding: var(--sd-space-4);
+  min-width: 0;
+}
+
+.sd-gsc-brand-name {
+  font-weight: 600;
+  margin-bottom: var(--sd-space-3);
+}
+
+.sd-gsc-brand-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sd-space-3);
+  margin: 0;
+}
+
+.sd-gsc-brand-stats dt {
+  font-size: 12px;
+  color: var(--sd-text-3);
+}
+
+.sd-gsc-brand-stats dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.sd-gsc-notes {
+  list-style: none;
+  padding: 0;
+  margin: var(--sd-space-4) 0 0;
+  display: grid;
+  gap: var(--sd-space-2);
+  font-size: 13px;
+  color: var(--sd-text-2);
+}
+
+.sd-gsc-notes li {
+  padding-left: var(--sd-space-3);
+  border-left: 3px solid var(--sd-border-strong);
+}
+
+.sd-gsc-notes li[data-tone='warn'] {
+  border-left-color: var(--sd-warn-border);
+  color: var(--sd-warn-text);
+}
+
+/* Responsive GSC-04: 360–390 px, 768 px y 1280–1440 px sin scroll horizontal de página. */
+@media (max-width: 1080px) {
+  .sd-gsc-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .sd-gsc-charts,
+  .sd-gsc-breakdown {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .sd-gsc-kpis {
+    gap: var(--sd-space-3);
+  }
+  .sd-gsc-kpi {
+    padding: var(--sd-space-3);
+  }
+  .sd-gsc-kpi .sd-kpi-value {
+    font-size: 22px;
+  }
+  .sd-gsc-kpi .sd-kpi-note {
+    font-size: 12px;
+  }
+  .sd-gsc-brand-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sd-gsc-table-wrap {
+    max-height: 240px;
+  }
+}
+
+/* Espaciado interior de la tarjeta GSC: la cabecera ya trae su propio padding. */
+.sd-gsc {
+  padding: 0 0 var(--sd-space-5);
+  overflow: hidden;
+}
+
+.sd-gsc > *:not(.sd-section-head) {
+  margin-inline: var(--sd-space-5);
+}
+
+.sd-gsc > .sd-gsc-kpis {
+  margin-top: var(--sd-space-5);
+}
+
+.sd-gsc > .sd-gsc-notes {
+  margin-bottom: 0;
+}
+
+@media (max-width: 520px) {
+  .sd-gsc > *:not(.sd-section-head) {
+    margin-inline: var(--sd-space-4);
+  }
+  .sd-gsc-head .sd-segmented {
+    width: 100%;
+  }
+  .sd-gsc-head .sd-segmented button {
+    flex: 1;
+    padding-inline: 6px;
+  }
+}

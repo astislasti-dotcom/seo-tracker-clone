@@ -1,0 +1,283 @@
+'use client';
+
+// GSC-04 · Rendimiento de Search Console dentro de /dashboard. Solo lectura de
+// GET /api/gsc/metrics con el token de sesión del propietario. No usa claves de servidor.
+import { useEffect, useState } from 'react';
+import {
+  VIEW_STATES,
+  buildGscView,
+  chartGeometry,
+  formatCount,
+  formatDay,
+  stateFromHttp,
+} from '../../lib/gsc/dashboard-view.mjs';
+
+export const GSC_PERIODS = Object.freeze([7, 28, 90]);
+
+const STATE_COPY = {
+  [VIEW_STATES.AUTH]: {
+    title: 'Inicia sesión para ver Search Console',
+    text: 'La sesión puede haber caducado. Vuelve a acceder para cargar las métricas.',
+    retry: false,
+  },
+  [VIEW_STATES.FORBIDDEN]: {
+    title: 'Tu cuenta no puede ver estas métricas',
+    text: 'Solo la persona responsable del panel tiene acceso a los datos de Search Console.',
+    retry: false,
+  },
+  [VIEW_STATES.CONFIG]: {
+    title: 'Falta configuración de lectura en el servidor',
+    text: 'No se pueden leer las métricas almacenadas. Avisa al responsable técnico.',
+    retry: true,
+  },
+  [VIEW_STATES.ERROR]: {
+    title: 'No se pudieron cargar las métricas de Search Console',
+    text: 'No se muestran cifras para no presentar datos incompletos.',
+    retry: true,
+  },
+  [VIEW_STATES.NETWORK]: {
+    title: 'Sin conexión con el servidor',
+    text: 'Revisa tu conexión y vuelve a intentarlo.',
+    retry: true,
+  },
+  [VIEW_STATES.INVALID]: {
+    title: 'La respuesta no tiene el formato esperado',
+    text: 'No se muestran cifras hasta recibir datos válidos.',
+    retry: true,
+  },
+};
+
+function KpiTile({ kpi }) {
+  const empty = kpi.value === '—';
+  return (
+    <div className="sd-card sd-kpi sd-gsc-kpi">
+      <div className="sd-kpi-label">{kpi.label}</div>
+      <div className="sd-kpi-value" data-empty={empty ? 'true' : 'false'}>{kpi.value}</div>
+      <div className="sd-kpi-note">{kpi.note}</div>
+    </div>
+  );
+}
+
+// Gráfico de línea en SVG. Sin texto dentro del SVG (escala con el ancho) y con tabla de datos
+// equivalente en <details>, para lectores de pantalla y para verificar cada día.
+function TrendChart({ series, metricKey, label, tone }) {
+  const geo = chartGeometry(series, metricKey);
+  const withRows = series.filter((p) => p.hasRow && p[metricKey] !== null).length;
+  const first = series[0]?.date;
+  const last = series[series.length - 1]?.date;
+  const summary = `${label}: ${withRows} de ${series.length} días con datos, máximo ${formatCount(geo.max)}. Los días sin registro aparecen como huecos.`;
+
+  return (
+    <figure className="sd-gsc-chart" data-tone={tone}>
+      <figcaption className="sd-gsc-chart-title">{label}</figcaption>
+      <svg
+        viewBox={`0 0 ${geo.width} ${geo.height}`}
+        role="img"
+        aria-label={summary}
+        focusable="false"
+      >
+        <line x1="0" x2={geo.width} y1={geo.height - 8} y2={geo.height - 8} className="sd-gsc-baseline" />
+        {geo.segments.map((d, i) => (
+          <path key={i} d={d} className="sd-gsc-line" vectorEffect="non-scaling-stroke" />
+        ))}
+        {geo.points.map((pt, i) => (
+          <circle key={`p${i}`} cx={pt.x} cy={pt.y} r="2.5" className="sd-gsc-dot" vectorEffect="non-scaling-stroke" />
+        ))}
+        {geo.gaps.map((g, i) => (
+          <circle key={`g${i}`} cx={g.x} cy={g.y} r="2.5" className="sd-gsc-gap" vectorEffect="non-scaling-stroke" />
+        ))}
+      </svg>
+      <div className="sd-gsc-chart-axis">
+        <span>{first ? formatDay(first) : ''}</span>
+        <span>{last ? formatDay(last) : ''}</span>
+      </div>
+    </figure>
+  );
+}
+
+function DailyTable({ series }) {
+  return (
+    <details className="sd-gsc-details">
+      <summary>Ver datos diarios</summary>
+      <div className="sd-gsc-table-wrap" tabIndex={0}>
+        <table className="sd-gsc-table">
+          <caption className="sd-sr-only">Datos diarios de Search Console</caption>
+          <thead>
+            <tr>
+              <th scope="col">Día</th>
+              <th scope="col" className="sd-num">Clics</th>
+              <th scope="col" className="sd-num">Impresiones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {series.map((p) => (
+              <tr key={p.date} data-row={p.hasRow ? 'true' : 'false'}>
+                <td>{formatDay(p.date)}{p.provisional ? ' · provisional' : ''}</td>
+                <td className="sd-num">{p.hasRow ? formatCount(p.clicks) : 'Sin registro'}</td>
+                <td className="sd-num">{p.hasRow ? formatCount(p.impressions) : 'Sin registro'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+function Breakdown({ rows }) {
+  return (
+    <div className="sd-gsc-breakdown" role="group" aria-label="Desglose por marca">
+      {rows.map((r) => (
+        <div key={r.domain} className="sd-gsc-brand" data-domain={r.domain}>
+          <div className="sd-gsc-brand-name">{r.label}</div>
+          <dl className="sd-gsc-brand-stats">
+            <div><dt>Clics</dt><dd>{r.clicks}</dd></div>
+            <div><dt>Impresiones</dt><dd>{r.impressions}</dd></div>
+            <div><dt>CTR</dt><dd>{r.ctr}</dd></div>
+            <div><dt>Posición GSC</dt><dd>{r.position}</dd></div>
+            <div><dt>Cobertura</dt><dd>{r.coverage}</dd></div>
+          </dl>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function GscPanel({ supabase, brand }) {
+  const [period, setPeriod] = useState(28);
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState({ key: null, view: null });
+
+  const key = `${brand}|${period}|${attempt}`;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const requestKey = `${brand}|${period}|${attempt}`;
+
+    const load = async () => {
+      let token = null;
+      try {
+        const { data } = await supabase.auth.getSession();
+        token = data?.session?.access_token ?? null;
+      } catch {
+        token = null;
+      }
+      if (!token) {
+        setResult({ key: requestKey, view: { state: VIEW_STATES.AUTH } });
+        return;
+      }
+      try {
+        const response = await fetch(
+          `/api/gsc/metrics?brand=${encodeURIComponent(brand)}&period=${period}`,
+          { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: controller.signal }
+        );
+        if (!response.ok) {
+          setResult({ key: requestKey, view: { state: stateFromHttp(response.status) } });
+          return;
+        }
+        const payload = await response.json();
+        setResult({ key: requestKey, view: buildGscView({ payload, brand, period }) });
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+        setResult({ key: requestKey, view: { state: VIEW_STATES.NETWORK } });
+      }
+    };
+
+    load();
+    return () => controller.abort();
+  }, [brand, period, attempt, supabase]);
+
+  // Una respuesta solo se pinta si corresponde a la marca y periodo actuales.
+  const current = result.key === key ? result.view : null;
+  const loading = current === null;
+  const retry = () => setAttempt((n) => n + 1);
+
+  let body;
+  if (loading) {
+    body = (
+      <div className="sd-gsc-kpis" aria-busy="true">
+        {['Clics', 'Impresiones', 'CTR', 'Posición media GSC'].map((label) => (
+          <div key={label} className="sd-card sd-kpi sd-gsc-kpi">
+            <div className="sd-kpi-label">{label}</div>
+            <div className="sd-kpi-value" data-empty="true">—</div>
+            <div className="sd-kpi-note">Cargando…</div>
+          </div>
+        ))}
+      </div>
+    );
+  } else if (STATE_COPY[current.state]) {
+    const copy = STATE_COPY[current.state];
+    body = (
+      <div className="sd-state" role="alert">
+        <p className="sd-state-title">{copy.title}</p>
+        <p className="sd-state-text">{copy.text}</p>
+        {copy.retry && (
+          <button type="button" className="sd-button" onClick={retry}>Reintentar</button>
+        )}
+        {current.state === VIEW_STATES.AUTH && <a className="sd-button" href="/login">Ir al acceso</a>}
+      </div>
+    );
+  } else {
+    body = (
+      <>
+        <div className="sd-gsc-kpis">
+          {current.kpis.map((k) => (
+            <KpiTile key={k.id} kpi={k} />
+          ))}
+        </div>
+
+        {current.state === VIEW_STATES.EMPTY ? (
+          <div className="sd-state" role="status">
+            <p className="sd-state-title">Sin días con datos en este periodo</p>
+            <p className="sd-state-text">
+              Que no haya registros no equivale a cero clics. Prueba otro periodo o revisa la sincronización.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="sd-gsc-charts">
+              <TrendChart series={current.series} metricKey="clicks" label="Clics diarios" tone="clicks" />
+              <TrendChart series={current.series} metricKey="impressions" label="Impresiones diarias" tone="impressions" />
+            </div>
+            <DailyTable series={current.series} />
+          </>
+        )}
+
+        {current.breakdown && <Breakdown rows={current.breakdown} />}
+      </>
+    );
+  }
+
+  return (
+    <section className="sd-card sd-gsc" aria-labelledby="sd-gsc-title" data-brand={brand}>
+      <div className="sd-section-head sd-gsc-head">
+        <div>
+          <h2 id="sd-gsc-title" className="sd-section-title">Rendimiento en Google (Search Console)</h2>
+          <p className="sd-section-meta">
+            {current?.range?.start
+              ? `${current.range.start} – ${current.range.end} · Fuente: Search Console`
+              : 'Fuente: Search Console'}
+            {current?.lastFetchedAt ? ` · Métricas actualizadas: ${current.lastFetchedAt}` : ''}
+          </p>
+        </div>
+        <div className="sd-segmented" role="group" aria-label="Periodo de Search Console">
+          {GSC_PERIODS.map((p) => (
+            <button key={p} type="button" aria-pressed={period === p} onClick={() => setPeriod(p)}>
+              {p} días
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {body}
+
+      {!loading && current.notes && current.notes.length > 0 && (
+        <ul className="sd-gsc-notes">
+          {current.notes.map((n, i) => (
+            <li key={i} data-tone={n.tone}>{n.text}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
