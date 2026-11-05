@@ -595,7 +595,7 @@
 
 .sd-gsc {
   --gsc-clicks: var(--sd-accent);
-  --gsc-impr: #8a94a3;
+  --gsc-impr: #748092; /* ~4:1 sobre blanco; gris neutro, no color de marca */
   margin-bottom: var(--sd-space-5);
 }
 
@@ -869,4 +869,50 @@
     flex: 1;
     padding-inline: 6px;
   }
+}
+
+/* GSC-04 (revisión): días parciales de «Todas», leyenda y cobertura por marca. */
+.sd-gsc-partial {
+  fill: var(--sd-surface);
+  stroke-width: 1.5;
+}
+
+.sd-gsc-chart[data-tone='clicks'] .sd-gsc-partial {
+  stroke: var(--gsc-clicks);
+}
+
+.sd-gsc-chart[data-tone='impressions'] .sd-gsc-partial {
+  stroke: var(--gsc-impr);
+}
+
+.sd-gsc-legend {
+  margin: var(--sd-space-2) 0 0;
+  font-size: 12px;
+  color: var(--sd-text-3);
+}
+
+.sd-gsc-coverage {
+  margin-top: var(--sd-space-4);
+  font-size: 13px;
+  color: var(--sd-text-2);
+}
+
+.sd-gsc-coverage-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 var(--sd-space-2);
+  color: var(--sd-text);
+}
+
+.sd-gsc-coverage ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--sd-space-1);
+}
+
+.sd-gsc-coverage-brand {
+  font-weight: 600;
+  color: var(--sd-text);
 }

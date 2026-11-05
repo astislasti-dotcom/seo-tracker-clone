@@ -58,30 +58,32 @@ function KpiTile({ kpi }) {
   );
 }
 
-// Gráfico de línea en SVG. Sin texto dentro del SVG (escala con el ancho) y con tabla de datos
-// equivalente en <details>, para lectores de pantalla y para verificar cada día.
+// Gráfico de línea en SVG. Sin texto dentro del SVG (escala con el ancho). Los días parciales
+// de «Todas» van como cuadrados; los días sin registro, como huecos en la base.
 function TrendChart({ series, metricKey, label, tone }) {
   const geo = chartGeometry(series, metricKey);
   const withRows = series.filter((p) => p.hasRow && p[metricKey] !== null).length;
+  const partialCount = series.filter((p) => p.partial).length;
   const first = series[0]?.date;
   const last = series[series.length - 1]?.date;
-  const summary = `${label}: ${withRows} de ${series.length} días con datos, máximo ${formatCount(geo.max)}. Los días sin registro aparecen como huecos.`;
+  const summary =
+    `${label}: ${withRows} de ${series.length} días con datos, máximo ${formatCount(geo.max)}. ` +
+    (partialCount > 0 ? `${partialCount} días con datos de una sola marca. ` : '') +
+    'Los días sin registro aparecen como huecos.';
 
   return (
     <figure className="sd-gsc-chart" data-tone={tone}>
       <figcaption className="sd-gsc-chart-title">{label}</figcaption>
-      <svg
-        viewBox={`0 0 ${geo.width} ${geo.height}`}
-        role="img"
-        aria-label={summary}
-        focusable="false"
-      >
+      <svg viewBox={`0 0 ${geo.width} ${geo.height}`} role="img" aria-label={summary} focusable="false">
         <line x1="0" x2={geo.width} y1={geo.height - 8} y2={geo.height - 8} className="sd-gsc-baseline" />
         {geo.segments.map((d, i) => (
           <path key={i} d={d} className="sd-gsc-line" vectorEffect="non-scaling-stroke" />
         ))}
         {geo.points.map((pt, i) => (
           <circle key={`p${i}`} cx={pt.x} cy={pt.y} r="2.5" className="sd-gsc-dot" vectorEffect="non-scaling-stroke" />
+        ))}
+        {geo.partials.map((pt, i) => (
+          <rect key={`q${i}`} x={pt.x - 3.5} y={pt.y - 3.5} width="7" height="7" className="sd-gsc-partial" vectorEffect="non-scaling-stroke" />
         ))}
         {geo.gaps.map((g, i) => (
           <circle key={`g${i}`} cx={g.x} cy={g.y} r="2.5" className="sd-gsc-gap" vectorEffect="non-scaling-stroke" />
@@ -95,7 +97,16 @@ function TrendChart({ series, metricKey, label, tone }) {
   );
 }
 
-function DailyTable({ series }) {
+function ChartLegend({ showPartial }) {
+  return (
+    <p className="sd-gsc-legend">
+      Hueco: día sin registro (no es cero).
+      {showPartial ? ' Cuadrado: día con datos de una sola marca en «Todas».' : ''}
+    </p>
+  );
+}
+
+function DailyTable({ series, showBrands }) {
   return (
     <details className="sd-gsc-details">
       <summary>Ver datos diarios</summary>
@@ -107,20 +118,45 @@ function DailyTable({ series }) {
               <th scope="col">Día</th>
               <th scope="col" className="sd-num">Clics</th>
               <th scope="col" className="sd-num">Impresiones</th>
+              {showBrands && <th scope="col">Marcas con datos</th>}
             </tr>
           </thead>
           <tbody>
             {series.map((p) => (
-              <tr key={p.date} data-row={p.hasRow ? 'true' : 'false'}>
+              <tr key={p.date} data-row={p.hasRow ? 'true' : 'false'} data-partial={p.partial ? 'true' : 'false'}>
                 <td>{formatDay(p.date)}{p.provisional ? ' · provisional' : ''}</td>
                 <td className="sd-num">{p.hasRow ? formatCount(p.clicks) : 'Sin registro'}</td>
                 <td className="sd-num">{p.hasRow ? formatCount(p.impressions) : 'Sin registro'}</td>
+                {showBrands && (
+                  <td>
+                    {p.hasRow
+                      ? p.partial
+                        ? `Solo ${p.brandLabels.join(', ')} (parcial)`
+                        : p.brandLabels.join(' + ')
+                      : 'Ninguna'}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </details>
+  );
+}
+
+function CoverageList({ items }) {
+  return (
+    <section className="sd-gsc-coverage" aria-label="Cobertura por marca">
+      <h3 className="sd-gsc-coverage-title">Cobertura por marca</h3>
+      <ul>
+        {items.map((c) => (
+          <li key={c.domain}>
+            <span className="sd-gsc-coverage-brand">{c.label}</span> {c.text}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -135,7 +171,6 @@ function Breakdown({ rows }) {
             <div><dt>Impresiones</dt><dd>{r.impressions}</dd></div>
             <div><dt>CTR</dt><dd>{r.ctr}</dd></div>
             <div><dt>Posición GSC</dt><dd>{r.position}</dd></div>
-            <div><dt>Cobertura</dt><dd>{r.coverage}</dd></div>
           </dl>
         </div>
       ))}
@@ -191,6 +226,7 @@ export default function GscPanel({ supabase, brand }) {
   const current = result.key === key ? result.view : null;
   const loading = current === null;
   const retry = () => setAttempt((n) => n + 1);
+  const isAll = brand === 'all';
 
   let body;
   if (loading) {
@@ -239,10 +275,12 @@ export default function GscPanel({ supabase, brand }) {
               <TrendChart series={current.series} metricKey="clicks" label="Clics diarios" tone="clicks" />
               <TrendChart series={current.series} metricKey="impressions" label="Impresiones diarias" tone="impressions" />
             </div>
-            <DailyTable series={current.series} />
+            <ChartLegend showPartial={isAll} />
+            <DailyTable series={current.series} showBrands={isAll} />
           </>
         )}
 
+        <CoverageList items={current.coverage} />
         {current.breakdown && <Breakdown rows={current.breakdown} />}
       </>
     );

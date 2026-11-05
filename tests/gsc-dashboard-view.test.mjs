@@ -103,18 +103,18 @@ test('HTTP errors map to distinct states, never to an empty dashboard', () => {
 test('a payload with the wrong shape produces INVALID and no figures', () => {
   const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
   const tres = demoProperty('3av.events', 7, TRES_ROWS);
-  assert.equal(isValidPayload(null, 'astisl.es'), false);
-  assert.equal(isValidPayload({ properties: [] }, 'astisl.es'), false);
-  assert.equal(isValidPayload({ properties: [{ domain: 'astisl.es' }] }, 'astisl.es'), false);
+  assert.equal(isValidPayload(null, 'astisl.es', 7), false);
+  assert.equal(isValidPayload({ properties: [] }, 'astisl.es', 7), false);
+  assert.equal(isValidPayload({ properties: [{ domain: 'astisl.es' }] }, 'astisl.es', 7), false);
   const broken = demoPayload({ brand: 'astisl.es', asti, tres });
   broken.properties[0].series[0].clicks = '10';
-  assert.equal(isValidPayload(broken, 'astisl.es'), false, 'clicks must be number or null');
+  assert.equal(isValidPayload(broken, 'astisl.es', 7), false, 'clicks must be number or null');
   const mismatched = demoPayload({ brand: 'all', asti, tres, combinedTotals: { clicks: 1, impressions: 1, ctr: 1, averagePosition: null } });
   mismatched.properties[1] = demoProperty('3av.events', 6, TRES_ROWS);
-  assert.equal(isValidPayload(mismatched, 'all'), false, 'series lengths must match');
+  assert.equal(isValidPayload(mismatched, 'all', 7), false, 'series lengths must match');
   const noCombined = demoPayload({ brand: 'all', asti, tres });
   delete noCombined.combined;
-  assert.equal(isValidPayload(noCombined, 'all'), false, 'all requires combined totals');
+  assert.equal(isValidPayload(noCombined, 'all', 7), false, 'all requires combined totals');
   assert.equal(buildGscView({ payload: null, brand: 'astisl.es', period: 7 }).state, VIEW_STATES.INVALID);
 });
 
@@ -129,7 +129,7 @@ test('single brand KPIs come from the property totals; position is shown with it
   assert.equal(byId.impressions.value, '610');
   assert.match(byId.ctr.value, /9,02/);
   assert.equal(byId.position.value, '12,3');
-  assert.match(byId.position.note, /No es la posición en Google/);
+  assert.match(byId.position.note, /no equivale a una posición SERP exacta/);
   assert.equal(view.breakdown, null);
 });
 
@@ -208,7 +208,8 @@ test('coverage differences are reported; 3AV recent tracking is not presented as
   const texts = view.notes.map((n) => n.text).join('\n');
   assert.match(texts, /Cobertura desigual/);
   assert.match(texts, /seguimiento de 3AV se activó recientemente/);
-  assert.match(texts, /no se representan como cero/);
+  const tresCoverage = view.coverage.find((c) => c.domain === '3av.events');
+  assert.equal(tresCoverage.text, '2 definitivos · 0 provisionales · 5 sin registro (de 7 días)');
   assert.match(texts, /Comparativa con el periodo anterior: no disponible/);
   assert.match(texts, /Las posiciones no se combinan/);
   const warn = view.notes.find((n) => n.tone === 'warn');
@@ -303,4 +304,106 @@ test('the new CSS has no horizontal scroll rules on the page and includes the th
   assert.match(css, /@media \(max-width: 820px\)/);
   assert.match(css, /@media \(max-width: 520px\)/);
   assert.doesNotMatch(css, /\.sd-main\s*\{[^}]*overflow-x:\s*scroll/);
+});
+
+// ---------- revisión PR #33: contrato estricto, parciales, cobertura y contraste ----------
+
+function strictFixture() {
+  const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
+  const tres = demoProperty('3av.events', 7, TRES_ROWS);
+  const combinedTotals = { clicks: 57, impressions: 680, ctr: 57 / 680, averagePosition: null };
+  return demoPayload({ brand: 'all', asti, tres, combinedTotals });
+}
+
+test('strict contract: rejects a payload that answers a different brand or period', () => {
+  const payload = strictFixture();
+  assert.equal(isValidPayload(payload, 'all', 7), true, 'control: the fixture is valid');
+  assert.equal(isValidPayload({ ...payload, brand: 'astisl.es' }, 'all', 7), false);
+  assert.equal(isValidPayload(payload, 'all', 28), false, 'period mismatch');
+  assert.equal(isValidPayload({ ...payload, period: 28 }, 'all', 7), false);
+});
+
+test('strict contract: rejects wrong domains, duplicated domains and wrong dates', () => {
+  const payload = strictFixture();
+  const extra = structuredClone(payload);
+  extra.properties[1].domain = 'otro.example';
+  assert.equal(isValidPayload(extra, 'all', 7), false, 'unexpected domain in all');
+  const dup = structuredClone(payload);
+  dup.properties[1].domain = 'astisl.es';
+  assert.equal(isValidPayload(dup, 'all', 7), false, 'duplicate domain');
+  const shifted = structuredClone(payload);
+  shifted.properties[0].series[0].date = '2026-10-10';
+  assert.equal(isValidPayload(shifted, 'all', 7), false, 'series date out of sequence');
+  const badEnd = { ...payload, endDate: '2026-11-01' };
+  assert.equal(isValidPayload(badEnd, 'all', 7), false, 'endDate must match startDate + period - 1');
+});
+
+test('strict contract: rejects impossible figures and inconsistent coverage', () => {
+  const payload = strictFixture();
+  const negative = structuredClone(payload);
+  negative.properties[0].series[0].clicks = -1;
+  assert.equal(isValidPayload(negative, 'all', 7), false, 'negative clicks');
+  const phantomZero = structuredClone(payload);
+  phantomZero.properties[0].series[3].clicks = 0; // day without row must not carry a 0
+  assert.equal(isValidPayload(phantomZero, 'all', 7), false, 'a missing day must stay null, not 0');
+  const badTotals = structuredClone(payload);
+  badTotals.properties[0].totals.ctr = Number.NaN;
+  assert.equal(isValidPayload(badTotals, 'all', 7), false, 'NaN is not a valid total');
+  const badCoverage = structuredClone(payload);
+  badCoverage.properties[1].coverage.missingDays = 0;
+  assert.equal(isValidPayload(badCoverage, 'all', 7), false, 'coverage must agree with the rows');
+  const badSplit = structuredClone(payload);
+  badSplit.properties[0].coverage.provisionalDays = 9;
+  assert.equal(isValidPayload(badSplit, 'all', 7), false, 'final + provisional must equal rows');
+});
+
+test('strict contract: an empty window with all nulls is valid, not an error', () => {
+  const asti = demoProperty('astisl.es', 7, {});
+  const tres = demoProperty('3av.events', 7, {});
+  const payload = demoPayload({ brand: 'all', asti, tres, combinedTotals: { clicks: null, impressions: null, ctr: null, averagePosition: null } });
+  assert.equal(isValidPayload(payload, 'all', 7), true);
+  assert.equal(buildGscView({ payload, brand: 'all', period: 7 }).state, VIEW_STATES.EMPTY);
+});
+
+test('partial days in "Todas" are flagged with the brand that contributes data', () => {
+  const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
+  const tres = demoProperty('3av.events', 7, TRES_ROWS);
+  const series = combinedSeries([asti, tres]);
+  assert.equal(series[0].partial, true);
+  assert.deepEqual(series[0].brandLabels, ['ASTI']);
+  assert.equal(series[5].partial, false, 'both brands present');
+  assert.deepEqual(series[5].brandLabels, ['ASTI', '3AV']);
+  assert.equal(series[3].partial, false, 'no brand at all is a gap, not a partial day');
+  const geo = chartGeometry(series, 'clicks');
+  assert.equal(geo.partials.length, 4, 'days 0, 1, 2 and 4 have only ASTI');
+  assert.equal(geo.points.length, 2, 'only complete days use a regular dot');
+});
+
+test('the view exposes partial-day count, per-brand coverage and no combined position', () => {
+  const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
+  const tres = demoProperty('3av.events', 7, TRES_ROWS);
+  const combinedTotals = { clicks: 57, impressions: 680, ctr: 57 / 680, averagePosition: null };
+  const view = buildGscView({ payload: demoPayload({ brand: 'all', asti, tres, combinedTotals }), brand: 'all', period: 7 });
+  assert.equal(view.partialDays, 4);
+  assert.deepEqual(view.coverage.map((c) => c.label), ['ASTI', '3AV']);
+  assert.match(view.coverage[0].text, /1 provisionales|1 provisional/);
+  assert.equal(view.breakdown[0].coverage, undefined, 'coverage lives in its own block');
+});
+
+test('the chart summary tells a screen reader how many days come from one brand only', async () => {
+  const src = await readFile(new URL('../app/dashboard/GscPanel.jsx', import.meta.url), 'utf8');
+  assert.match(src, /días con datos de una sola marca/);
+  assert.match(src, /sd-gsc-partial/);
+  assert.match(src, /Cobertura por marca/);
+});
+
+test('impressions line keeps at least 4:1 contrast on white (WCAG graphics need 3:1)', async () => {
+  const css = await readFile(new URL('../app/dashboard/dashboard.css', import.meta.url), 'utf8');
+  assert.match(css, /--gsc-impr: #748092/);
+  const lum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  };
+  const ratio = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+  assert.ok(ratio('#748092', '#ffffff') >= 4, `contrast ${ratio('#748092', '#ffffff').toFixed(2)}`);
 });
