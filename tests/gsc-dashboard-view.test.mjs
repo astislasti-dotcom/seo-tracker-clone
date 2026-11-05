@@ -7,6 +7,10 @@ import {
   buildGscView,
   chartGeometry,
   combinedSeries,
+  describeDay,
+  indexAtX,
+  moveIndex,
+  niceCeil,
   formatCount,
   formatCtr,
   formatDay,
@@ -290,12 +294,99 @@ test('the dashboard shows the GSC section above the SERP block without removing 
   assert.match(page, /signOutSafely\(supabase\.auth\)/);
 });
 
-test('the chart is accessible: role img with a text summary and a native table of daily values', async () => {
+test('the chart is accessible: focusable group with a summary, live readout and native daily table', async () => {
   const src = await readFile(new URL('../app/dashboard/GscPanel.jsx', import.meta.url), 'utf8');
-  assert.match(src, /role="img"/);
+  assert.match(src, /role="group"/);
+  assert.match(src, /tabIndex=\{0\}/);
   assert.match(src, /aria-label=\{summary\}/);
+  assert.match(src, /aria-describedby=\{readoutId\}/);
+  assert.match(src, /aria-live="polite"/);
   assert.match(src, /<details/);
   assert.match(src, /Sin registro/);
+  assert.match(src, /Toca el gráfico o usa las flechas/);
+});
+
+test('the chart reacts to keyboard (arrows, Home, End, Escape) and to pointer or touch', async () => {
+  const src = await readFile(new URL('../app/dashboard/GscPanel.jsx', import.meta.url), 'utf8');
+  assert.match(src, /onKeyDown=\{onKeyDown\}/);
+  assert.match(src, /e\.key === 'Escape'/);
+  assert.match(src, /moveIndex\(active, e\.key, n\)/);
+  assert.match(src, /onPointerDown=\{onPointer\}/);
+  assert.match(src, /indexAtX\(vbX, n/);
+  assert.match(src, /key=\{`\$\{brand\}-\$\{period\}-clicks`\}/, 'readout resets when brand or period changes');
+});
+
+test('niceCeil returns round scale tops at or above the data maximum', () => {
+  assert.equal(niceCeil(0), 1);
+  assert.equal(niceCeil(1), 1);
+  assert.equal(niceCeil(3), 5);
+  assert.equal(niceCeil(20), 20);
+  assert.equal(niceCeil(21), 25);
+  assert.equal(niceCeil(8232), 10000);
+  for (const v of [0.4, 7, 19, 33, 480, 8232]) assert.ok(niceCeil(v) >= v);
+});
+
+test('chart ticks are 0, half and the rounded maximum, placed on the same scale as the line', () => {
+  const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
+  const geo = chartGeometry(singleSeries(asti), 'clicks', { width: 600, height: 160, pad: 8 });
+  assert.deepEqual(geo.ticks.map((t) => t.value), [20, 10, 0]);
+  assert.deepEqual(geo.ticks.map((t) => t.label), ['20', '10', '0']);
+  assert.equal(Number(geo.ticks[0].y), 8);
+  assert.equal(Number(geo.ticks[2].y), 152);
+  assert.equal(geo.xs.length, 7);
+});
+
+test('indexAtX maps a pointer position to the nearest day and stays inside the range', () => {
+  assert.equal(indexAtX(8, 7), 0);
+  assert.equal(indexAtX(592, 7), 6);
+  assert.equal(indexAtX(-50, 7), 0);
+  assert.equal(indexAtX(9999, 7), 6);
+  assert.equal(indexAtX(300, 1), 0);
+});
+
+test('moveIndex: arrows, Home and End stay in range; Escape is not a move', () => {
+  assert.equal(moveIndex(null, 'ArrowLeft', 7), 5, 'first press from nothing starts at the last day');
+  assert.equal(moveIndex(3, 'ArrowRight', 7), 4);
+  assert.equal(moveIndex(6, 'ArrowRight', 7), 6);
+  assert.equal(moveIndex(0, 'ArrowLeft', 7), 0);
+  assert.equal(moveIndex(3, 'Home', 7), 0);
+  assert.equal(moveIndex(3, 'End', 7), 6);
+  assert.equal(moveIndex(3, 'Escape', 7), 3);
+  assert.equal(moveIndex(3, 'ArrowLeft', 0), null);
+});
+
+test('describeDay never presents a missing day as zero and names the contributing brand', () => {
+  const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
+  const tres = demoProperty('3av.events', 7, TRES_ROWS);
+  const series = combinedSeries([asti, tres]);
+
+  const missing = describeDay(series[3], 'clicks', 'Clics');
+  assert.equal(missing.value, 'Sin registro');
+  assert.equal(missing.missing, true);
+  assert.doesNotMatch(missing.text, /: 0/);
+
+  const partial = describeDay(series[0], 'clicks', 'Clics');
+  assert.equal(partial.scope, 'Solo ASTI (parcial)');
+  assert.match(partial.text, /Clics: 10/);
+
+  const complete = describeDay(series[6], 'clicks', 'Clics'); // both brands, both final
+  assert.equal(complete.scope, 'ASTI + 3AV');
+  assert.equal(complete.provisional, false);
+
+  const realZero = describeDay(singleSeries(asti)[2], 'clicks', 'Clics');
+  assert.equal(realZero.value, '0', 'a real zero is shown as zero');
+  assert.equal(realZero.missing, false);
+
+  const provisional = describeDay(singleSeries(asti)[5], 'clicks', 'Clics');
+  assert.equal(provisional.provisional, true);
+  assert.match(provisional.text, /provisional/);
+});
+
+test('describeDay formats the date in Spanish with the weekday and month name', () => {
+  const asti = demoProperty('astisl.es', 7, ASTI_ROWS);
+  const day = describeDay(singleSeries(asti)[0], 'clicks', 'Clics');
+  assert.match(day.date, /octubre|noviembre/);
+  assert.match(day.date, /de 20\d\d/);
 });
 
 test('the new CSS has no horizontal scroll rules on the page and includes the three responsive widths', async () => {

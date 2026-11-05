@@ -2,13 +2,16 @@
 
 // GSC-04 · Rendimiento de Search Console dentro de /dashboard. Solo lectura de
 // GET /api/gsc/metrics con el token de sesión del propietario. No usa claves de servidor.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   VIEW_STATES,
   buildGscView,
   chartGeometry,
+  describeDay,
   formatCount,
   formatDay,
+  indexAtX,
+  moveIndex,
   stateFromHttp,
 } from '../../lib/gsc/dashboard-view.mjs';
 
@@ -58,43 +61,120 @@ function KpiTile({ kpi }) {
   );
 }
 
-// Gráfico de línea en SVG. Sin texto dentro del SVG (escala con el ancho). Los días parciales
-// de «Todas» van como cuadrados; los días sin registro, como huecos en la base.
-function TrendChart({ series, metricKey, label, tone }) {
+// Gráfico de línea en SVG con referencias Y, detalle del día y navegación accesible.
+// · Puntero o tacto: el día más cercano se selecciona y su detalle aparece bajo el gráfico.
+// · Teclado: el contenedor recibe foco; flechas, Inicio y Fin mueven el día; Escape lo quita.
+// · El detalle vive en una región aria-live, así que un lector de pantalla lo anuncia.
+// · Un día sin registro se dice «Sin registro», nunca 0. Un día parcial indica la marca que aporta.
+function TrendChart({ series, metricKey, label, unit, tone }) {
   const geo = chartGeometry(series, metricKey);
+  const [active, setActive] = useState(null);
+  const plotRef = useRef(null);
+  const svgRef = useRef(null);
+  const n = series.length;
+  const readoutId = `gsc-readout-${metricKey}`;
   const withRows = series.filter((p) => p.hasRow && p[metricKey] !== null).length;
   const partialCount = series.filter((p) => p.partial).length;
-  const first = series[0]?.date;
-  const last = series[series.length - 1]?.date;
   const summary =
-    `${label}: ${withRows} de ${series.length} días con datos, máximo ${formatCount(geo.max)}. ` +
+    `${label}: ${withRows} de ${n} días con datos, máximo ${formatCount(geo.max)}. ` +
     (partialCount > 0 ? `${partialCount} días con datos de una sola marca. ` : '') +
     'Los días sin registro aparecen como huecos.';
+
+  const onPointer = (e) => {
+    const svg = svgRef.current;
+    if (!svg || n === 0) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const vbX = ((e.clientX - rect.left) * geo.width) / rect.width;
+    setActive(indexAtX(vbX, n, { width: geo.width, pad: geo.pad }));
+  };
+
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setActive(null);
+      return;
+    }
+    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+      e.preventDefault();
+      const next = moveIndex(active, e.key, n);
+      if (next !== null) setActive(next);
+    }
+  };
+
+  const current = active === null ? null : series[active];
+  const readout = current ? describeDay(current, metricKey, unit) : null;
+  const guideX = active === null ? null : geo.xs[active];
+  const focusY = current && current.hasRow && typeof current[metricKey] === 'number' ? yForValue(current[metricKey], geo) : null;
 
   return (
     <figure className="sd-gsc-chart" data-tone={tone}>
       <figcaption className="sd-gsc-chart-title">{label}</figcaption>
-      <svg viewBox={`0 0 ${geo.width} ${geo.height}`} role="img" aria-label={summary} focusable="false">
-        <line x1="0" x2={geo.width} y1={geo.height - 8} y2={geo.height - 8} className="sd-gsc-baseline" />
-        {geo.segments.map((d, i) => (
-          <path key={i} d={d} className="sd-gsc-line" vectorEffect="non-scaling-stroke" />
-        ))}
-        {geo.points.map((pt, i) => (
-          <circle key={`p${i}`} cx={pt.x} cy={pt.y} r="2.5" className="sd-gsc-dot" vectorEffect="non-scaling-stroke" />
-        ))}
-        {geo.partials.map((pt, i) => (
-          <rect key={`q${i}`} x={pt.x - 3.5} y={pt.y - 3.5} width="7" height="7" className="sd-gsc-partial" vectorEffect="non-scaling-stroke" />
-        ))}
-        {geo.gaps.map((g, i) => (
-          <circle key={`g${i}`} cx={g.x} cy={g.y} r="2.5" className="sd-gsc-gap" vectorEffect="non-scaling-stroke" />
-        ))}
-      </svg>
+      <div className="sd-gsc-plot">
+        <div className="sd-gsc-yaxis" aria-hidden="true">
+          {geo.ticks.map((t) => (
+            <span key={t.value} style={{ top: `${(Number(t.y) / geo.height) * 100}%` }}>{t.label}</span>
+          ))}
+        </div>
+        <div
+          ref={plotRef}
+          className="sd-gsc-svgwrap"
+          role="group"
+          tabIndex={0}
+          aria-label={summary}
+          aria-describedby={readoutId}
+          onKeyDown={onKeyDown}
+        >
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${geo.width} ${geo.height}`}
+            aria-hidden="true"
+            focusable="false"
+            onPointerDown={onPointer}
+            onPointerMove={(e) => {
+              if (e.pointerType === 'mouse') onPointer(e);
+            }}
+          >
+            {geo.ticks.map((t) => (
+              <line key={`grid${t.value}`} x1="0" x2={geo.width} y1={t.y} y2={t.y} className="sd-gsc-grid" vectorEffect="non-scaling-stroke" />
+            ))}
+            <line x1="0" x2={geo.width} y1={geo.height - geo.pad} y2={geo.height - geo.pad} className="sd-gsc-baseline" />
+            {geo.segments.map((d, i) => (
+              <path key={i} d={d} className="sd-gsc-line" vectorEffect="non-scaling-stroke" />
+            ))}
+            {geo.points.map((pt, i) => (
+              <circle key={`p${i}`} cx={pt.x} cy={pt.y} r="2.5" className="sd-gsc-dot" vectorEffect="non-scaling-stroke" />
+            ))}
+            {geo.partials.map((pt, i) => (
+              <rect key={`q${i}`} x={pt.x - 3.5} y={pt.y - 3.5} width="7" height="7" className="sd-gsc-partial" vectorEffect="non-scaling-stroke" />
+            ))}
+            {geo.gaps.map((g, i) => (
+              <circle key={`g${i}`} cx={g.x} cy={g.y} r="2.5" className="sd-gsc-gap" vectorEffect="non-scaling-stroke" />
+            ))}
+            {guideX !== null && (
+              <line x1={guideX} x2={guideX} y1={geo.pad} y2={geo.height - geo.pad} className="sd-gsc-guide" vectorEffect="non-scaling-stroke" />
+            )}
+            {focusY !== null && guideX !== null && (
+              <circle cx={guideX} cy={focusY} r="4.5" className="sd-gsc-focus" vectorEffect="non-scaling-stroke" />
+            )}
+          </svg>
+        </div>
+      </div>
+      <p id={readoutId} className="sd-gsc-readout" aria-live="polite" data-missing={readout?.missing ? 'true' : 'false'}>
+        {readout ? readout.text : 'Toca el gráfico o usa las flechas del teclado para ver el valor de un día.'}
+      </p>
       <div className="sd-gsc-chart-axis">
-        <span>{first ? formatDay(first) : ''}</span>
-        <span>{last ? formatDay(last) : ''}</span>
+        <span>{series[0]?.date ? formatDay(series[0].date) : ''}</span>
+        <span>{series[n - 1]?.date ? formatDay(series[n - 1].date) : ''}</span>
       </div>
     </figure>
   );
+}
+
+// Posición Y de un valor con la misma escala que la geometría del gráfico.
+function yForValue(value, geo) {
+  const y = geo.height - geo.pad - (value / geo.max) * (geo.height - 2 * geo.pad);
+  return y.toFixed(1);
 }
 
 function ChartLegend({ showPartial }) {
@@ -272,8 +352,8 @@ export default function GscPanel({ supabase, brand }) {
         ) : (
           <>
             <div className="sd-gsc-charts">
-              <TrendChart series={current.series} metricKey="clicks" label="Clics diarios" tone="clicks" />
-              <TrendChart series={current.series} metricKey="impressions" label="Impresiones diarias" tone="impressions" />
+              <TrendChart key={`${brand}-${period}-clicks`} series={current.series} metricKey="clicks" label="Clics diarios" unit="Clics" tone="clicks" />
+              <TrendChart key={`${brand}-${period}-impressions`} series={current.series} metricKey="impressions" label="Impresiones diarias" unit="Impresiones" tone="impressions" />
             </div>
             <ChartLegend showPartial={isAll} />
             <DailyTable series={current.series} showBrands={isAll} />
