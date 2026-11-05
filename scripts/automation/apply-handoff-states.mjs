@@ -5,6 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { LABELS, decideForEvent } from '../../lib/automation/handoff-states.mjs';
 
+const ACCOUNTS_PATH = new URL('../../config/automation-authorized-accounts.json', import.meta.url);
+
 const LABEL_SPEC = {
   [LABELS.READY]: { color: '0E8A16', description: 'Entrega lista para revisión (automatización, sin IA)' },
   [LABELS.CHANGES]: { color: 'D93F0B', description: 'Cambios solicitados en revisión (automatización, sin IA)' },
@@ -67,6 +69,15 @@ export async function applyDecision(decision, number, api) {
   return { applied: true, action: decision.action, add: decision.add, remove: decision.remove };
 }
 
+// Lista explícita de logins autorizados. Si falta o no es válida, la automatización no actúa.
+export async function loadAllowedLogins(path = ACCOUNTS_PATH) {
+  const parsed = JSON.parse(await readFile(path, 'utf8'));
+  if (!Array.isArray(parsed.logins) || !parsed.logins.every((l) => typeof l === 'string' && l.trim() !== '')) {
+    throw new Error('lista de cuentas no válida');
+  }
+  return parsed.logins;
+}
+
 export async function main(env = process.env, fetchImpl = fetch) {
   const eventName = env.GITHUB_EVENT_NAME;
   const repo = env.GITHUB_REPOSITORY;
@@ -76,6 +87,7 @@ export async function main(env = process.env, fetchImpl = fetch) {
   }
 
   const payload = JSON.parse(await readFile(env.GITHUB_EVENT_PATH, 'utf8'));
+  const allowedLogins = await loadAllowedLogins();
   const api = githubApi({ repo, token, fetchImpl });
 
   // issue_comment no trae el sha de la PR: se pide a la API para validar marcadores antiguos.
@@ -84,7 +96,7 @@ export async function main(env = process.env, fetchImpl = fetch) {
     payload.pull_request = await api.getPull(payload.issue.number);
   }
 
-  const decision = decideForEvent(eventName, payload);
+  const decision = decideForEvent(eventName, payload, { allowedLogins });
   if (!decision) {
     console.log(`evento no tratado: ${eventName}`);
     return { applied: false, reason: 'evento no tratado' };

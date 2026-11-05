@@ -1,0 +1,4 @@
+{
+  "_comment": "Cuentas de GitHub autorizadas a mover estados de coordinación (AUTOMATION-01). Lista explícita por login: el rol de autor no basta. Ampliar solo con aprobación del propietario. No contiene secretos.",
+  "logins": ["astislasti-dotcom"]
+}
