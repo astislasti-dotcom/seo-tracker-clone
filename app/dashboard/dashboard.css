@@ -584,3 +584,103 @@
     animation: none;
   }
 }
+
+/* GSC-06E · Consultas y páginas */
+.sd-snap-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sd-space-3);
+  margin: 0 0 var(--sd-space-4);
+}
+
+.sd-snap-controls .sd-segmented button[aria-selected='true'] {
+  background: var(--sd-text);
+  color: #fff;
+}
+
+.sd-snap-notice {
+  margin: var(--sd-space-2) 0 var(--sd-space-3);
+  font-size: 12px;
+  color: var(--sd-text-3);
+}
+
+.sd-snap-keycell {
+  min-width: 180px;
+  max-width: 520px;
+}
+
+.sd-snap-keycell a,
+.sd-snap-key {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--sd-accent-strong);
+}
+
+.sd-snap-demo {
+  border-style: dashed;
+  align-self: flex-start;
+}
+
+.sd-snap-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sd-space-3);
+  margin-top: var(--sd-space-3);
+  font-size: 13px;
+}
+
+.sd-snap-pager-buttons {
+  display: flex;
+  gap: var(--sd-space-2);
+}
+
+.sd-snap-pager-buttons button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sd-snap .sd-banner {
+  margin: var(--sd-space-2) 0;
+  padding: var(--sd-space-3);
+}
+
+/* GSC-06E · alineación interna de las tarjetas de captura (padding igual que la cabecera). */
+.sd-snap .sd-card .sd-snap-notice,
+.sd-snap .sd-card .sd-banner,
+.sd-snap .sd-card .sd-snap-pager,
+.sd-snap .sd-card .sd-table-wrap {
+  margin-left: var(--sd-space-5);
+  margin-right: var(--sd-space-5);
+}
+
+.sd-snap .sd-card .sd-table-wrap {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.sd-snap .sd-card .sd-table-wrap .sd-table th,
+.sd-snap .sd-card .sd-table-wrap .sd-table td {
+  padding-left: var(--sd-space-3);
+  padding-right: var(--sd-space-3);
+}
+
+.sd-snap .sd-card .sd-table-wrap .sd-table th:first-child,
+.sd-snap .sd-card .sd-table-wrap .sd-table td:first-child {
+  padding-left: var(--sd-space-5);
+}
+
+.sd-snap .sd-num {
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .sd-snap-keycell {
+    min-width: 120px;
+  }
+
+  .sd-snap .sd-card .sd-table-wrap .sd-table {
+    font-size: 12px;
+  }
+}
