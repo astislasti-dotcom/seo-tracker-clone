@@ -53,6 +53,14 @@ EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
 SELECT * FROM public.gsc_dimension_snapshots_current
  WHERE property_domain = 'astisl.es' AND dimension = 'page' AND period_days = 28;
 
+\echo '-- 4b) Lectura que MATERIALIZA el jsonb (no solo el índice): bytes de texto y tiempo de extraer 5.000 filas'
+EXPLAIN (ANALYZE, BUFFERS, COSTS OFF, TIMING OFF)
+SELECT sum(octet_length(payload::text)) FROM public.gsc_dimension_snapshots_current
+ WHERE property_domain = 'astisl.es' AND dimension = 'page' AND period_days = 28;
+\timing on
+\copy (SELECT payload FROM public.gsc_dimension_snapshots_current WHERE property_domain = 'astisl.es' AND dimension = 'page' AND period_days = 28) TO '/dev/null'
+\echo '   (tiempo de la línea anterior = extracción + serialización del jsonb a texto; sin HTTP)'
+
 \echo '-- 5) Tres capturas más para la misma combinación, después limpieza a 3 (coste del DELETE)'
 INSERT INTO public.gsc_dimension_snapshots
   (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
@@ -77,3 +85,27 @@ DELETE FROM public.gsc_dimension_snapshots d
 SELECT count(*) AS capturas_retenidas
   FROM public.gsc_dimension_snapshots
  WHERE property_domain = 'astisl.es' AND dimension = 'page' AND period_days = 28;
+
+\echo '-- 7) Escenario de URLs POCO repetitivas (md5), 90 días, para no mezclarlo con el escenario comprimible'
+INSERT INTO public.gsc_dimension_snapshots
+  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
+   aggregation_type, row_limit, row_count, truncated, payload)
+SELECT 'astisl.es', 'page', 90, timestamptz '2026-11-05 08:00+00', date '2026-08-08', date '2026-11-05',
+       'final', 'auto', 25000, 5000, true,
+       jsonb_agg(jsonb_build_object(
+         'k', 'https://astisl.es/servicios/' || md5(g::text) || '/' || md5((g*7+3)::text)
+              || '-' || md5((g*13+5)::text) || '?utm_source=gsc&utm_medium=organic&variant=' || md5((g*11)::text),
+         'c', (g * 7) % 500, 'i', (g * 131) % 20000 + 10,
+         'ctr', round(((g * 7) % 500)::numeric / ((g * 131) % 20000 + 10), 4),
+         'p', round(1 + (g % 400) / 10.0, 1)))
+  FROM generate_series(1, 5000) g;
+
+\echo '-- 8) Tamaño comparado de las capturas de 5.000 filas (escenario comprimible vs poco repetitivo)'
+SELECT period_days, dimension,
+       pg_size_pretty(pg_column_size(payload)::bigint)       AS payload_en_disco,
+       pg_size_pretty(octet_length(payload::text)::bigint)   AS texto_json,
+       round(pg_column_size(payload)::numeric / octet_length(payload::text), 3) AS ratio_compresion
+  FROM public.gsc_dimension_snapshots
+ WHERE row_count = 5000
+ ORDER BY period_days, dimension;
+

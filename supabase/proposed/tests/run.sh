@@ -93,6 +93,30 @@ run_case() {
   fi
 }
 
+# run_preexisting <nombre> <fixture> <patron>: la tabla ya existe con otra forma. La migración debe
+# abortar en el preflight, sin crear la vista ni tocar la tabla (la transacción lo garantiza).
+run_preexisting() {
+  local name="$1" fixture="$2" pattern="$3"
+  local db; db="$(rnd_db)"
+  local log="$WORK/$db.pre.log"
+  new_db "$db"
+  if ! psql -X -q -v ON_ERROR_STOP=1 -d "$db" -f "$fixture" >/dev/null 2>&1; then
+    echo "ERROR cargando fixture $fixture"; drop_db "$db"; FAILS=$((FAILS+1)); return
+  fi
+  apply_mig "$db" "$MIG" "$log"; local c=$?
+  local view_created
+  view_created="$(psql_db "$db" "SELECT to_regclass('public.gsc_dimension_snapshots_current') IS NOT NULL")"
+  drop_db "$db"
+  cat "$log" > "$log.all"
+  if [ $c -ne 0 ] && [ "$view_created" = "f" ] && grep -Eq -- "$pattern" "$log.all"; then
+    printf 'PASS  %-60s (esperado: fail)\n' "$name"
+  else
+    printf 'FAIL  %-60s (migración=%s, vista_creada=%s)\n' "$name" "$c" "$view_created"
+    grep -E "ERROR|Preflight" "$log" | head -n 3 | sed 's/^/        /'
+    FAILS=$((FAILS+1))
+  fi
+}
+
 # mutate <nombre> <expresion-sed>: genera la variante mutada de la propuesta.
 mutate() { sed "$2" "$MIG" > "$WORK/$1.sql"; }
 
@@ -180,6 +204,75 @@ SQL
 fi
 drop_db "$DB_MAIN"
 
+# Retención bajo concurrencia. Estado inicial: 4 capturas confirmadas (08–11) de ASTI consulta 7 días.
+#  - Sesión A: inserta la 12:00 y NO confirma durante 4 s.
+#  - Sesión B: aplica la retención (mantener 3) y confirma mientras A sigue abierta.
+#  - Tras confirmar A: quedan 4 filas (retención transitoriamente por encima de 3).
+#  - Segunda pasada de retención: converge a 3 y la vigente (12:00) nunca se borra.
+DB_RET="$(rnd_db)"
+new_db "$DB_RET"
+apply_mig "$DB_RET" "$MIG" "$WORK/ret.mig.log"; cr=$?
+RET_SQL="$WORK/ret.sql"
+cat > "$RET_SQL" <<'SQL'
+SET ROLE service_role;
+DELETE FROM public.gsc_dimension_snapshots d
+ WHERE d.property_domain = 'astisl.es' AND d.dimension = 'query' AND d.period_days = 7
+   AND d.id NOT IN (
+     SELECT id FROM public.gsc_dimension_snapshots
+      WHERE property_domain = 'astisl.es' AND dimension = 'query' AND period_days = 7
+      ORDER BY requested_at DESC, id DESC
+      LIMIT 3);
+SQL
+if [ $cr -eq 0 ]; then
+  psql_db "$DB_RET" "$(cat <<'SQL'
+SET ROLE service_role;
+INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES
+ ('astisl.es','query',7,'2026-11-05 08:00+00','2026-10-30','2026-11-05','final','byProperty',25000,1,false,'[{"k":"R08"}]'),
+ ('astisl.es','query',7,'2026-11-05 09:00+00','2026-10-30','2026-11-05','final','byProperty',25000,1,false,'[{"k":"R09"}]'),
+ ('astisl.es','query',7,'2026-11-05 10:00+00','2026-10-30','2026-11-05','final','byProperty',25000,1,false,'[{"k":"R10"}]'),
+ ('astisl.es','query',7,'2026-11-05 11:00+00','2026-10-30','2026-11-05','final','byProperty',25000,1,false,'[{"k":"R11"}]');
+SQL
+)" >/dev/null
+
+  A_RET="$WORK/ret_a.sql"
+  cat > "$A_RET" <<'SQL'
+BEGIN;
+SET LOCAL ROLE service_role;
+INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload)
+VALUES ('astisl.es','query',7,'2026-11-05 12:00+00','2026-10-30','2026-11-05','final','byProperty',25000,1,false,'[{"k":"R12"}]');
+SELECT pg_sleep(4);
+COMMIT;
+SQL
+  psql -X -q -v ON_ERROR_STOP=1 -d "$DB_RET" -f "$A_RET" > "$WORK/ret_a.log" 2>&1 &
+  PID_RA=$!
+  sleep 1
+  psql -X -q -v ON_ERROR_STOP=1 -d "$DB_RET" -f "$RET_SQL" > "$WORK/ret_b.log" 2>&1; rb=$?
+  sleep 1
+  ret_mid="$(psql_db "$DB_RET" "SELECT payload->0->>'k' FROM public.gsc_dimension_snapshots_current WHERE property_domain='astisl.es' AND dimension='query' AND period_days=7")"
+  ret_mid_n="$(psql_db "$DB_RET" "SELECT count(*) FROM public.gsc_dimension_snapshots WHERE property_domain='astisl.es' AND dimension='query' AND period_days=7")"
+  wait $PID_RA; ra=$?
+  ret_after_n="$(psql_db "$DB_RET" "SELECT count(*) FROM public.gsc_dimension_snapshots WHERE property_domain='astisl.es' AND dimension='query' AND period_days=7")"
+  psql -X -q -v ON_ERROR_STOP=1 -d "$DB_RET" -f "$RET_SQL" > "$WORK/ret_c.log" 2>&1; rc=$?
+  ret_final_n="$(psql_db "$DB_RET" "SELECT count(*) FROM public.gsc_dimension_snapshots WHERE property_domain='astisl.es' AND dimension='query' AND period_days=7")"
+  ret_final_v="$(psql_db "$DB_RET" "SELECT payload->0->>'k' FROM public.gsc_dimension_snapshots_current WHERE property_domain='astisl.es' AND dimension='query' AND period_days=7")"
+  ret_final_set="$(psql_db "$DB_RET" "SELECT string_agg(payload->0->>'k', ',' ORDER BY requested_at) FROM public.gsc_dimension_snapshots WHERE property_domain='astisl.es' AND dimension='query' AND period_days=7")"
+  if [ $rb -eq 0 ] && [ $ra -eq 0 ] && [ $rc -eq 0 ] \
+     && [ "$ret_mid" = "R11" ] && [ "$ret_mid_n" = "3" ] \
+     && [ "$ret_after_n" = "4" ] && [ "$ret_final_n" = "3" ] \
+     && [ "$ret_final_v" = "R12" ] && [ "$ret_final_set" = "R10,R11,R12" ]; then
+    echo "PASS  retención con dos sesiones: converge a 3, la vigente nunca se borra"
+    echo "        mientras A está abierta (B ya confirmó retención) -> vigente: '$ret_mid' | filas: $ret_mid_n"
+    echo "        tras confirmar A (transitorio)                     -> filas: $ret_after_n"
+    echo "        tras segunda pasada de retención                   -> filas: $ret_final_n | vigente: '$ret_final_v' | conjunto: $ret_final_set"
+  else
+    echo "FAIL  retención concurrente (migración=$cr, B=$rb, A=$ra, C=$rc, mitad='$ret_mid'/$ret_mid_n, tras_A=$ret_after_n, final=$ret_final_n/'$ret_final_v'/'$ret_final_set')"
+    FAILS=$((FAILS+1))
+  fi
+else
+  echo "FAIL  retención concurrente: la migración no se aplicó"; FAILS=$((FAILS+1))
+fi
+drop_db "$DB_RET"
+
 # Medidas en base aparte (5.000 filas, URLs largas, datos ficticios).
 if [ -f "$MEASURE" ]; then
   DB_MEAS="$(rnd_db)"
@@ -196,9 +289,9 @@ echo "== Negativos (la propuesta mutada debe romper la prueba indicada)"
 mutate no-rls          '/ENABLE ROW LEVEL SECURITY/d'
 mutate grant-update    '/^GRANT SELECT, INSERT, DELETE ON public.gsc_dimension_snapshots TO service_role;/a GRANT UPDATE ON public.gsc_dimension_snapshots TO service_role;'
 mutate grant-anon-view '/^GRANT SELECT ON public.gsc_dimension_snapshots_current TO service_role;/a GRANT SELECT ON public.gsc_dimension_snapshots_current TO anon;'
-mutate no-trunc-ck     '/gsc_dim_snap_trunc_ck/d'
-mutate no-rows-ck      '/gsc_dim_snap_rows_ck/,/ELSE false END),/d'
-mutate no-window-ck    '/gsc_dim_snap_window_ck/d'
+mutate no-trunc-ck     '/CONSTRAINT gsc_dim_snap_trunc_ck/d'
+mutate no-rows-ck      '/CONSTRAINT gsc_dim_snap_rows_ck/,/ELSE false END),/d'
+mutate no-window-ck    '/CONSTRAINT gsc_dim_snap_window_ck/d'
 mutate asc-order       '/^ ORDER BY property_domain/s/requested_at DESC/requested_at ASC/'
 mutate no-tiebreak     '/^ ORDER BY property_domain/s/, id DESC//'
 
@@ -210,6 +303,11 @@ run_case "sin CHECK de row_count = jsonb_array_length"              fail "ACEPTA
 run_case "sin CHECK de ventana (27 días con periodo 28)"            fail "ACEPTADO indebidamente"           "$WORK/no-window-ck.sql"
 run_case "vista eligiendo la captura MÁS ANTIGUA (ASC)"             fail "vigente incorrecta"               "$WORK/asc-order.sql"
 run_case "vista sin desempate por id"                               fail "vista sin desempate|empate mal resuelto" "$WORK/no-tiebreak.sql"
+
+echo "== Tabla preexistente (IF NOT EXISTS no compara: debe abortar sin tocarla)"
+run_preexisting "mismas 15 columnas, row_count text"                 "$HERE/fixtures/pre_same_count_wrong_type.sql"        "incompatible structure"
+run_preexisting "mismas 15 columnas, payload nullable"               "$HERE/fixtures/pre_same_count_nullable_payload.sql"  "incompatible structure"
+run_preexisting "mismas 15 columnas, id sin identidad ni PK"         "$HERE/fixtures/pre_same_count_no_identity.sql"       "incompatible structure|incompatible primary key"
 
 echo
 if [ $FAILS -eq 0 ]; then echo "TODOS LOS CASOS SE COMPORTAN COMO SE ESPERABA."; exit 0; fi

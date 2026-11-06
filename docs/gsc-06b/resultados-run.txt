@@ -15,6 +15,10 @@ PASS  rollback: captura válida se revierte si la segunda de la transacción fal
 PASS  concurrencia: A (10:00, confirmada tarde) no desplaza a B (11:00); A sin confirmar invisible
         mientras A está abierta -> vigente: 'B solicitada 11:00' | filas de A visibles: 0
         tras confirmar A        -> vigente: 'B solicitada 11:00'
+PASS  retención con dos sesiones: converge a 3, la vigente nunca se borra
+        mientras A está abierta (B ya confirmó retención) -> vigente: 'R11' | filas: 3
+        tras confirmar A (transitorio)                     -> filas: 4
+        tras segunda pasada de retención                   -> filas: 3 | vigente: 'R12' | conjunto: R10,R11,R12
 PASS  medidas registradas
 == Negativos (la propuesta mutada debe romper la prueba indicada)
 PASS  sin RLS (ENABLE ROW LEVEL SECURITY retirado)                 (esperado: fail)
@@ -25,5 +29,9 @@ PASS  sin CHECK de row_count = jsonb_array_length                  (esperado: fa
 PASS  sin CHECK de ventana (27 días con periodo 28)               (esperado: fail)
 PASS  vista eligiendo la captura MÁS ANTIGUA (ASC)                (esperado: fail)
 PASS  vista sin desempate por id                                   (esperado: fail)
+== Tabla preexistente (IF NOT EXISTS no compara: debe abortar sin tocarla)
+PASS  mismas 15 columnas, row_count text                           (esperado: fail)
+PASS  mismas 15 columnas, payload nullable                         (esperado: fail)
+PASS  mismas 15 columnas, id sin identidad ni PK                   (esperado: fail)
 
 TODOS LOS CASOS SE COMPORTAN COMO SE ESPERABA.

@@ -26,19 +26,78 @@ BEGIN
   END IF;
 END $$;
 
--- Preflight 2: la tabla no debe existir con otra forma. Si existe, se exige la misma definición
--- (IF NOT EXISTS no compara columnas).
+-- Preflight 2: si la tabla ya existe, debe coincidir con la definición propuesta. IF NOT EXISTS no
+-- compara nada, así que se verifica explícitamente: columnas (nombre, tipo, nulabilidad), identidad,
+-- clave primaria sobre id, número de CHECK y las cinco restricciones con nombre. Si no coincide,
+-- se aborta sin tocar la tabla existente.
 DO $$
 DECLARE
-  n integer;
+  n       integer;
+  bad     integer;
+  tbl     constant text := 'gsc_dimension_snapshots';
+  id_attn smallint;
 BEGIN
-  IF to_regclass('public.gsc_dimension_snapshots') IS NOT NULL THEN
-    SELECT count(*) INTO n
-      FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'gsc_dimension_snapshots';
-    IF n <> 15 THEN
-      RAISE EXCEPTION 'Preflight failed: public.gsc_dimension_snapshots exists with % columns (expected 15)', n;
-    END IF;
+  IF to_regclass('public.gsc_dimension_snapshots') IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT count(*) INTO n
+    FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = tbl;
+  IF n <> 15 THEN
+    RAISE EXCEPTION 'Preflight failed: incompatible structure: public.% has % columns (expected 15)', tbl, n;
+  END IF;
+
+  WITH expected(column_name, data_type, is_nullable) AS (VALUES
+    ('id',                        'bigint',      'NO'),
+    ('property_domain',           'text',        'NO'),
+    ('dimension',                 'text',        'NO'),
+    ('period_days',               'smallint',    'NO'),
+    ('requested_at',              'timestamp with time zone', 'NO'),
+    ('completed_at',              'timestamp with time zone', 'NO'),
+    ('window_start',              'date',        'NO'),
+    ('window_end',                'date',        'NO'),
+    ('data_state',                'text',        'NO'),
+    ('aggregation_type',          'text',        'NO'),
+    ('response_aggregation_type', 'text',        'YES'),
+    ('row_limit',                 'integer',     'NO'),
+    ('row_count',                 'integer',     'NO'),
+    ('truncated',                 'boolean',     'NO'),
+    ('payload',                   'jsonb',       'NO'))
+  SELECT count(*) INTO bad
+    FROM expected e
+    LEFT JOIN information_schema.columns c
+      ON c.table_schema = 'public' AND c.table_name = tbl AND c.column_name = e.column_name
+   WHERE c.column_name IS NULL
+      OR c.data_type <> e.data_type
+      OR c.is_nullable <> e.is_nullable;
+  IF bad <> 0 THEN
+    RAISE EXCEPTION 'Preflight failed: incompatible structure: % column(s) differ in name, type or nullability', bad;
+  END IF;
+
+  SELECT attnum INTO id_attn FROM pg_attribute
+   WHERE attrelid = 'public.gsc_dimension_snapshots'::regclass AND attname = 'id';
+  IF (SELECT attidentity FROM pg_attribute
+       WHERE attrelid = 'public.gsc_dimension_snapshots'::regclass AND attname = 'id') <> 'a' THEN
+    RAISE EXCEPTION 'Preflight failed: incompatible structure: id must be GENERATED ALWAYS AS IDENTITY';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                  WHERE conrelid = 'public.gsc_dimension_snapshots'::regclass
+                    AND contype = 'p' AND conkey = ARRAY[id_attn]) THEN
+    RAISE EXCEPTION 'Preflight failed: incompatible primary key: id must be the primary key';
+  END IF;
+
+  IF (SELECT count(*) FROM pg_constraint
+       WHERE conrelid = 'public.gsc_dimension_snapshots'::regclass AND contype = 'c') <> 13 THEN
+    RAISE EXCEPTION 'Preflight failed: incompatible checks: expected 13 CHECK constraints';
+  END IF;
+  SELECT count(*) INTO bad FROM unnest(ARRAY[
+      'gsc_dim_snap_window_ck', 'gsc_dim_snap_agg_ck', 'gsc_dim_snap_rows_ck',
+      'gsc_dim_snap_trunc_ck', 'gsc_dim_snap_time_ck']) AS req(name)
+   WHERE NOT EXISTS (SELECT 1 FROM pg_constraint
+                      WHERE conrelid = 'public.gsc_dimension_snapshots'::regclass AND conname = req.name);
+  IF bad <> 0 THEN
+    RAISE EXCEPTION 'Preflight failed: incompatible checks: % named constraint(s) missing', bad;
   END IF;
 END $$;
 
