@@ -44,3 +44,6 @@ next-env.d.ts
 credentials.json
 .env.local
 .env.*.local
+
+# GSC-06E · salida generada del arnés local de QA
+scripts/gsc06e-harness/dist/

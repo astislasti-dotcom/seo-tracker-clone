@@ -8,6 +8,7 @@ import { buildDashboardModel, DISPLAY, summarizeKeywords } from '../../lib/keywo
 import { brandLabel, formatMeasurementDate, measurementSubtitle } from '../../lib/keywords/labels.mjs';
 import { readAllRows } from '../../lib/keywords/paginate.mjs';
 import { MSG_LOGOUT_FAILED, signOutSafely } from '../../lib/auth/password-login.mjs';
+import { SnapshotsSection } from './snapshots-section.mjs';
 
 // The anon client is used only for the owner's session. Table data is read through the
 // owner-only server route /api/keyword-tracking, never directly from the database.
@@ -16,6 +17,16 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   { auth: { persistSession: true, autoRefreshToken: true } }
 );
+
+// Token de la sesión del propietario para la API owner-only de capturas (GSC-06E). No se guarda aparte.
+async function getSnapshotToken() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const LOADING_MODEL = {
   status: 'loading',
@@ -90,6 +101,12 @@ const IconReports = () => (
     <path d="M7 3h7l5 5v13H7z" />
     <path d="M14 3v5h5" />
     <path d="M10 13h6M10 17h6" />
+  </Icon>
+);
+
+const IconSnapshots = () => (
+  <Icon>
+    <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
   </Icon>
 );
 
@@ -367,6 +384,9 @@ export default function Dashboard() {
             <button type="button" className="sd-nav-item" aria-current={view === 'overview' ? 'page' : undefined} onClick={() => setView('overview')}>
               <IconPanel /> Panel
             </button>
+            <button type="button" className="sd-nav-item" aria-current={view === 'snapshots' ? 'page' : undefined} onClick={() => setView('snapshots')}>
+              <IconSnapshots /> Consultas y páginas
+            </button>
             <button type="button" className="sd-nav-item" aria-current={view === 'reports' ? 'page' : undefined} onClick={() => setView('reports')}>
               <IconReports /> Reportes
             </button>
@@ -381,7 +401,7 @@ export default function Dashboard() {
                 <h1 className="sd-title">Control SEO</h1>
                 <p className="sd-subtitle">{subtitle}</p>
               </div>
-              {view === 'overview' && (
+              {view !== 'reports' && (
                 <div className="sd-segmented" role="group" aria-label="Filtrar por marca">
                   {BRANDS.map((b) => (
                     <button key={b.id} type="button" aria-pressed={brand === b.id} onClick={() => setBrand(b.id)}>
@@ -402,6 +422,8 @@ export default function Dashboard() {
                 <button type="button" className="sd-button" style={{ marginTop: 0 }} onClick={retry}>Reintentar</button>
               </div>
             )}
+
+            {view === 'snapshots' && <SnapshotsSection brand={brand} getToken={getSnapshotToken} />}
 
             {view === 'reports' && (
               <section className="sd-card">
