@@ -1,0 +1,36 @@
+== Positivo
+PASS  segunda aplicación idempotente (misma definición de vista)
+PASS  suite SQL: privilegios, RLS, escritura solo por función, restricciones, vigencia, retención, inmutabilidad
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:53: NOTICE:  OK 1: privilegios y RLS correctos; escritura solo por función
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:62: NOTICE:  OK 1b: vista de lectura restringida a service_role
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:75: NOTICE:  OK 2: anon no lee snapshots (permiso denegado)
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:93: NOTICE:  OK 3: service_role no puede INSERT ni DELETE directos
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:109: NOTICE:  OK 4: 12 restricciones de tabla rechazan datos inválidos
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:116: NOTICE:  OK 4b: la función rechaza datos inválidos con las mismas restricciones
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:141: NOTICE:  OK 5a: gana la captura solicitada más tarde (no la guardada más tarde); retención a 3 sin estado de 4
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:157: NOTICE:  OK 5b: empate en requested_at resuelto por id (determinista, comprobado en vista)
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:180: NOTICE:  OK 5c: retención por combinación, una vigente por combinación, sin tocar otras
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:194: NOTICE:  OK 6: service_role no puede modificar capturas
+PASS  rollback: captura válida se revierte si la segunda de la transacción falla
+PASS  retención concurrente: B espera a A (lock por combinación), sin estado de 4, converge a 3
+        mitad: vigente='R10' filas=3 | B esperó 3043 ms | final: filas=3 vigente='R12' conjunto=R10,R11,R12 | A=0 B=0
+PASS  medidas registradas
+== Negativos (la propuesta mutada debe romper la prueba indicada)
+PASS  sin RLS (ENABLE ROW LEVEL SECURITY retirado)                 (esperado: fail)
+PASS  service_role con UPDATE (capturas mutables)                  (esperado: fail)
+PASS  service_role con INSERT directo                              (esperado: fail)
+PASS  SELECT de la vista para anon                                 (esperado: fail)
+PASS  sin CHECK de truncado (5.000 filas sin truncated)            (esperado: fail)
+PASS  sin CHECK de row_count = jsonb_array_length                  (esperado: fail)
+PASS  sin CHECK de ventana (27 días con periodo 28)               (esperado: fail)
+PASS  vista eligiendo la captura MÁS ANTIGUA (ASC)                (esperado: fail)
+PASS  vista sin desempate por id                                   (esperado: fail)
+PASS  función sin retención (no poda en la transacción)         (esperado: fail)
+PASS  sin lock por combinación: el escenario concurrente detecta la mutación (esperado)
+        mitad: vigente='R10' filas=3 | B esperó 3038 ms | final: filas=4 vigente='R12' conjunto=R09,R10,R11,R12 | A=0 B=0
+== Tabla preexistente (IF NOT EXISTS no compara: debe abortar sin tocarla)
+PASS  mismas 15 columnas, row_count text                           (esperado: fail)
+PASS  mismas 15 columnas, payload nullable                         (esperado: fail)
+PASS  mismas 15 columnas, id sin identidad ni PK                   (esperado: fail)
+
+TODOS LOS CASOS SE COMPORTAN COMO SE ESPERABA.
