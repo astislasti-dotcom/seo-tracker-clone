@@ -1,6 +1,10 @@
 -- Pruebas de GSC-06B en PostgreSQL DESECHABLE (nunca Supabase). Datos ficticios.
 -- No ejecutar a mano: lo invoca supabase/proposed/tests/run.sh tras aplicar la propuesta.
 -- Cada ASSERT falla la sesión si no se cumple; psql usa ON_ERROR_STOP.
+--
+-- Escritura: service_role SOLO puede llamar a public.gsc_publish_dimension_snapshot (inserta y aplica
+-- retención en una transacción). Las restricciones de tabla se prueban como administrador, porque
+-- son propiedades de la tabla y no de quien escribe.
 \set ON_ERROR_STOP on
 
 -- Helper temporal: el SQL dado debe fallar con una violación de restricción o de NOT NULL.
@@ -14,24 +18,38 @@ EXCEPTION
     RETURN;
 END $$;
 
+-- Helper temporal: publica una captura final con límite 25.000 y truncado = (filas >= 5.000).
+CREATE OR REPLACE FUNCTION pg_temp.pub(
+  p_domain text, p_dim text, p_period integer, p_req timestamptz,
+  p_ws date, p_we date, p_agg text, p_rows integer, p_payload jsonb) RETURNS bigint
+LANGUAGE sql AS $$
+  SELECT public.gsc_publish_dimension_snapshot(
+    p_domain, p_dim, p_period::smallint, p_req, p_ws, p_we, 'final', p_agg, NULL,
+    25000, p_rows, (p_rows >= 5000), p_payload);
+$$;
+
 -- ---------------------------------------------------------------- 1. Privilegios (como admin)
 DO $$
 DECLARE
-  rel regclass := 'public.gsc_dimension_snapshots'::regclass;
+  rel  regclass := 'public.gsc_dimension_snapshots'::regclass;
   priv text;
+  fn   text := 'public.gsc_publish_dimension_snapshot(text, text, smallint, timestamptz, date, date, text, text, text, integer, integer, boolean, jsonb)';
 BEGIN
   FOREACH priv IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] LOOP
     ASSERT NOT has_table_privilege('anon', rel, priv), format('anon tiene %s', priv);
     ASSERT NOT has_table_privilege('authenticated', rel, priv), format('authenticated tiene %s', priv);
   END LOOP;
-  ASSERT has_table_privilege('service_role', rel, 'SELECT'), 'service_role sin SELECT';
-  ASSERT has_table_privilege('service_role', rel, 'INSERT'), 'service_role sin INSERT';
-  ASSERT has_table_privilege('service_role', rel, 'DELETE'), 'service_role sin DELETE';
-  ASSERT NOT has_table_privilege('service_role', rel, 'UPDATE'), 'service_role tiene UPDATE (las capturas son inmutables)';
+  ASSERT has_table_privilege('service_role', rel, 'SELECT'), 'service_role sin SELECT (necesario para la vista)';
+  ASSERT NOT has_table_privilege('service_role', rel, 'INSERT'), 'service_role tiene INSERT directo';
+  ASSERT NOT has_table_privilege('service_role', rel, 'DELETE'), 'service_role tiene DELETE directo';
+  ASSERT NOT has_table_privilege('service_role', rel, 'UPDATE'), 'service_role tiene UPDATE';
   ASSERT NOT has_table_privilege('service_role', rel, 'TRUNCATE'), 'service_role tiene TRUNCATE';
   ASSERT (SELECT relrowsecurity FROM pg_class WHERE oid = rel), 'RLS desactivado';
   ASSERT (SELECT count(*) FROM pg_policies WHERE tablename = 'gsc_dimension_snapshots') = 0, 'hay políticas RLS';
-  RAISE NOTICE 'OK 1: privilegios y RLS correctos';
+  ASSERT has_function_privilege('service_role', fn, 'EXECUTE'), 'service_role no puede ejecutar la función de escritura';
+  ASSERT NOT has_function_privilege('anon', fn, 'EXECUTE'), 'anon puede ejecutar la función de escritura';
+  ASSERT NOT has_function_privilege('authenticated', fn, 'EXECUTE'), 'authenticated puede ejecutar la función de escritura';
+  RAISE NOTICE 'OK 1: privilegios y RLS correctos; escritura solo por función';
 END $$;
 
 -- Vista: solo service_role puede leerla.
@@ -44,7 +62,6 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------- 2. Acceso real por rol
--- anon no puede insertar ni leer, aunque la tabla exista.
 SET ROLE anon;
 DO $$
 BEGIN
@@ -57,19 +74,26 @@ END $$;
 RESET ROLE;
 DO $$ BEGIN RAISE NOTICE 'OK 2: anon no lee snapshots (permiso denegado)'; END $$;
 
--- ---------------------------------------------------------------- 3. Escritura y restricciones (service_role)
+-- ---------------------------------------------------------------- 3. Escritura directa denegada (service_role)
 SET ROLE service_role;
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload)
+    VALUES ('astisl.es','query',28,now(),'2026-10-09','2026-11-05','final','byProperty',25000,0,false,'[]');
+    RAISE EXCEPTION 'service_role pudo INSERT directo';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    DELETE FROM public.gsc_dimension_snapshots;
+    RAISE EXCEPTION 'service_role pudo DELETE directo';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  RAISE NOTICE 'OK 3: service_role no puede INSERT ni DELETE directos';
+END $$;
+RESET ROLE;
 
--- Captura válida de referencia (periodo 28: 2026-10-09 .. 2026-11-05 son 28 días).
-INSERT INTO public.gsc_dimension_snapshots
-  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
-   aggregation_type, response_aggregation_type, row_limit, row_count, truncated, payload)
-VALUES ('astisl.es', 'query', 28, '2026-11-05 08:00:00+00', '2026-10-09', '2026-11-05', 'final',
-        'byProperty', 'byProperty', 25000, 2, false,
-        '[{"k":"consulta demo 1","c":3,"i":40,"ctr":0.075,"p":8.1},{"k":"consulta demo 2","c":0,"i":12,"ctr":0,"p":14.0}]');
-DO $$ BEGIN RAISE NOTICE 'OK 3a: captura válida aceptada'; END $$;
-
--- Restricciones: cada caso debe ser rechazado.
+-- ---------------------------------------------------------------- 4. Restricciones de tabla (como admin)
 SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES ('www.astisl.es','query',28,now(),'2026-10-09','2026-11-05','final','byProperty',25000,0,false,'[]')$q$, 'host no permitido');
 SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES ('astisl.es','device',28,now(),'2026-10-09','2026-11-05','final','byProperty',25000,0,false,'[]')$q$, 'dimensión device');
 SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES ('astisl.es','query',14,now(),'2026-10-22','2026-11-05','final','byProperty',25000,0,false,'[]')$q$, 'periodo 14');
@@ -82,45 +106,43 @@ SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (pr
 SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES ('astisl.es','query',28,now(),'2026-10-09','2026-11-05','final','byProperty',25000,5000,false,(SELECT jsonb_agg('{"k":"x"}'::jsonb) FROM generate_series(1,5000)))$q$, 'truncated=false con 5.000 filas');
 SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,completed_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES ('astisl.es','query',28,'2026-11-05 09:00+00','2026-11-05 08:00+00','2026-10-09','2026-11-05','final','byProperty',25000,0,false,'[]')$q$, 'completed_at anterior a requested_at');
 SELECT pg_temp.expect_rejected($q$INSERT INTO public.gsc_dimension_snapshots (property_domain,dimension,period_days,requested_at,window_start,window_end,data_state,aggregation_type,row_limit,row_count,truncated,payload) VALUES ('astisl.es','query',28,NULL,'2026-10-09','2026-11-05','final','byProperty',25000,0,false,'[]')$q$, 'requested_at nulo');
-DO $$ BEGIN RAISE NOTICE 'OK 3b: 12 restricciones rechazan datos inválidos'; END $$;
+DO $$ BEGIN RAISE NOTICE 'OK 4: 12 restricciones de tabla rechazan datos inválidos'; END $$;
 
--- ---------------------------------------------------------------- 4. Regla de vigencia (una sesión)
--- Dos capturas para la misma combinación (ASTI, query, 28). La solicitada después gana,
--- aunque se haya guardado antes. Una captura antigua que termina tarde no desplaza a la nueva.
-INSERT INTO public.gsc_dimension_snapshots
-  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
-   aggregation_type, row_limit, row_count, truncated, payload)
-VALUES ('astisl.es', 'query', 28, '2026-11-05 10:00+00', '2026-10-09', '2026-11-05', 'final',
-        'byProperty', 25000, 1, false, '[{"k":"captura solicitada a las 10:00"}]');
-INSERT INTO public.gsc_dimension_snapshots
-  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
-   aggregation_type, row_limit, row_count, truncated, payload)
-VALUES ('astisl.es', 'query', 28, '2026-11-05 11:00+00', '2026-10-09', '2026-11-05', 'final',
-        'byProperty', 25000, 1, false, '[{"k":"captura solicitada a las 11:00"}]');
--- Llega una captura solicitada a las 09:00 (más antigua), guardada al final.
-INSERT INTO public.gsc_dimension_snapshots
-  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
-   aggregation_type, row_limit, row_count, truncated, payload)
-VALUES ('astisl.es', 'query', 28, '2026-11-05 09:00+00', '2026-10-09', '2026-11-05', 'final',
-        'byProperty', 25000, 1, false, '[{"k":"captura solicitada a las 09:00 (tardía)"}]');
+-- La misma validación debe aplicarse cuando se escribe por la función (service_role).
+SET ROLE service_role;
+SELECT pg_temp.expect_rejected($q$SELECT pg_temp.pub('astisl.es','query',28,'2026-11-05 08:00+00','2026-10-10','2026-11-05','byProperty',1,'[{"k":"x"},{"k":"y"}]')$q$, 'función: row_count distinto de payload');
+SELECT pg_temp.expect_rejected($q$SELECT pg_temp.pub('astisl.es','query',28,'2026-11-05 08:00+00','2026-10-10','2026-11-05','byProperty',1,'{"k":"no es array"}')$q$, 'función: payload no es array');
+SELECT pg_temp.expect_rejected($q$SELECT pg_temp.pub('astisl.es','page',28,'2026-11-05 08:00+00','2026-10-09','2026-11-05','byProperty',0,'[]')$q$, 'función: página con byProperty');
+DO $$ BEGIN RAISE NOTICE 'OK 4b: la función rechaza datos inválidos con las mismas restricciones'; END $$;
+
+-- ---------------------------------------------------------------- 5. Vigencia y retención en la función
+-- Captura de referencia (08:00) y tres más (10:00, 11:00 y 09:00 llegada tarde). Con 4 capturas
+-- para la misma combinación, la retención de la MISMA transacción deja 3: 09:00, 10:00, 11:00.
+SELECT pg_temp.pub('astisl.es','query',28,'2026-11-05 08:00+00','2026-10-09','2026-11-05','byProperty',2,
+  '[{"k":"captura solicitada a las 08:00"},{"k":"fila 2"}]');
+SELECT pg_temp.pub('astisl.es','query',28,'2026-11-05 10:00+00','2026-10-09','2026-11-05','byProperty',1,'[{"k":"captura solicitada a las 10:00"}]');
+SELECT pg_temp.pub('astisl.es','query',28,'2026-11-05 11:00+00','2026-10-09','2026-11-05','byProperty',1,'[{"k":"captura solicitada a las 11:00"}]');
+SELECT pg_temp.pub('astisl.es','query',28,'2026-11-05 09:00+00','2026-10-09','2026-11-05','byProperty',1,'[{"k":"captura solicitada a las 09:00 (tardía)"}]');
 
 DO $$
-DECLARE winner text;
+DECLARE winner text; n integer;
 BEGIN
   SELECT payload->0->>'k' INTO winner FROM public.gsc_dimension_snapshots_current
    WHERE property_domain = 'astisl.es' AND dimension = 'query' AND period_days = 28;
   ASSERT winner = 'captura solicitada a las 11:00', format('vigente incorrecta: %s', winner);
-  RAISE NOTICE 'OK 4a: gana la captura solicitada más tarde, no la guardada más tarde';
+  SELECT count(*) INTO n FROM public.gsc_dimension_snapshots
+   WHERE property_domain = 'astisl.es' AND dimension = 'query' AND period_days = 28;
+  ASSERT n = 3, format('retención en la misma transacción dejó %s, debía dejar 3', n);
+  ASSERT NOT EXISTS (SELECT 1 FROM public.gsc_dimension_snapshots
+                      WHERE property_domain = 'astisl.es' AND dimension = 'query' AND period_days = 28
+                        AND payload->0->>'k' = 'captura solicitada a las 08:00'),
+         'la captura más antigua sobrevivió a la retención';
+  RAISE NOTICE 'OK 5a: gana la captura solicitada más tarde (no la guardada más tarde); retención a 3 sin estado de 4';
 END $$;
 
 -- Desempate determinista: mismo requested_at, gana el id mayor.
-INSERT INTO public.gsc_dimension_snapshots
-  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
-   aggregation_type, row_limit, row_count, truncated, payload)
-VALUES ('3av.events', 'page', 7, '2026-11-05 12:00+00', '2026-10-30', '2026-11-05', 'final',
-        'auto', 25000, 1, false, '[{"k":"primera en empate"}]'),
-       ('3av.events', 'page', 7, '2026-11-05 12:00+00', '2026-10-30', '2026-11-05', 'final',
-        'auto', 25000, 1, false, '[{"k":"segunda en empate"}]');
+SELECT pg_temp.pub('3av.events','page',7,'2026-11-05 12:00+00','2026-10-30','2026-11-05','auto',1,'[{"k":"primera en empate"}]');
+SELECT pg_temp.pub('3av.events','page',7,'2026-11-05 12:00+00','2026-10-30','2026-11-05','auto',1,'[{"k":"segunda en empate"}]');
 DO $$
 DECLARE winner text;
 BEGIN
@@ -131,35 +153,14 @@ BEGIN
   -- así que el desempate por id se exige también en la definición de la vista.
   ASSERT position('requested_at DESC, id DESC' IN pg_get_viewdef('public.gsc_dimension_snapshots_current'::regclass, true)) > 0,
          'vista sin desempate por id (ORDER BY debe incluir requested_at DESC, id DESC)';
-  RAISE NOTICE 'OK 4b: empate en requested_at resuelto por id (determinista, comprobado en vista)';
+  RAISE NOTICE 'OK 5b: empate en requested_at resuelto por id (determinista, comprobado en vista)';
 END $$;
 
--- Combinaciones separadas: una página 7 días de 3AV no altera ASTI consulta 28 días.
-DO $$
-DECLARE n integer;
-BEGIN
-  SELECT count(*) INTO n FROM public.gsc_dimension_snapshots_current;
-  ASSERT n = 2, format('la vista debe tener una fila por combinación con datos (2 en este punto), tiene %s', n);
-  RAISE NOTICE 'OK 4c: una fila vigente por combinación';
-END $$;
-
--- ---------------------------------------------------------------- 5. Retención: 3 por combinación
--- Cinco capturas para ASTI query 7 días. Se conservan las 3 solicitadas más recientes.
-INSERT INTO public.gsc_dimension_snapshots
-  (property_domain, dimension, period_days, requested_at, window_start, window_end, data_state,
-   aggregation_type, row_limit, row_count, truncated, payload)
-SELECT 'astisl.es', 'query', 7, timestamptz '2026-11-01 00:00+00' + make_interval(hours => g),
-       '2026-10-30', '2026-11-05', 'final', 'byProperty', 25000, 1, false,
-       jsonb_build_array(jsonb_build_object('k', 'retención ' || g))
+-- Retención de otra combinación: cinco capturas de ASTI consulta 7 días => quedan 3 y la vigente es la última.
+SELECT pg_temp.pub('astisl.es','query',7,timestamptz '2026-11-01 00:00+00' + make_interval(hours => g),
+                   '2026-10-30','2026-11-05','byProperty',1,
+                   jsonb_build_array(jsonb_build_object('k', 'retención ' || g)))
   FROM generate_series(1, 5) g;
-
-DELETE FROM public.gsc_dimension_snapshots d
- WHERE d.property_domain = 'astisl.es' AND d.dimension = 'query' AND d.period_days = 7
-   AND d.id NOT IN (
-     SELECT id FROM public.gsc_dimension_snapshots
-      WHERE property_domain = 'astisl.es' AND dimension = 'query' AND period_days = 7
-      ORDER BY requested_at DESC, id DESC
-      LIMIT 3);
 
 DO $$
 DECLARE n integer; winner text;
@@ -169,12 +170,13 @@ BEGIN
   ASSERT n = 3, format('retención dejó %s, debía dejar 3', n);
   SELECT payload->0->>'k' INTO winner FROM public.gsc_dimension_snapshots_current
    WHERE property_domain = 'astisl.es' AND dimension = 'query' AND period_days = 7;
-  ASSERT winner = 'retención 5', format('vigente tras limpieza incorrecta: %s', winner);
-  -- La única captura de su combinación nunca se elimina por la limpieza.
+  ASSERT winner = 'retención 5', format('vigente tras retención incorrecta: %s', winner);
   SELECT count(*) INTO n FROM public.gsc_dimension_snapshots
    WHERE property_domain = '3av.events' AND dimension = 'page' AND period_days = 7;
-  ASSERT n = 2, 'la limpieza tocó otra combinación';
-  RAISE NOTICE 'OK 5: retención de 3 y vigente intacta';
+  ASSERT n = 2, 'la retención tocó otra combinación';
+  SELECT count(*) INTO n FROM public.gsc_dimension_snapshots_current;
+  ASSERT n = 3, format('la vista debe tener una fila por combinación con datos (3), tiene %s', n);
+  RAISE NOTICE 'OK 5c: retención por combinación, una vigente por combinación, sin tocar otras';
 END $$;
 
 RESET ROLE;

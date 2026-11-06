@@ -1,15 +1,23 @@
 Timing is on.
 == Medidas GSC-06B (datos ficticios)
 SET
-Time: 0.158 ms
+Time: 0.218 ms
 SELECT 5000
-Time: 7.367 ms
--- 1) Inserción de una captura completa de 5.000 filas (página, 28 días): una sola sentencia
-INSERT 0 1
-Time: 38.307 ms
--- 2) Inserción de una captura de consultas de 5.000 filas (28 días)
-INSERT 0 1
-Time: 27.804 ms
+Time: 14.305 ms
+-- 1) Publicación de una captura completa de 5.000 filas (página, 28 días): inserción + retención en una transacción
+ gsc_publish_dimension_snapshot 
+--------------------------------
+                              1
+(1 row)
+
+Time: 68.791 ms
+-- 2) Publicación de una captura de consultas de 5.000 filas (28 días)
+ gsc_publish_dimension_snapshot 
+--------------------------------
+                              2
+(1 row)
+
+Time: 41.043 ms
 -- 3) Tamaño de cada captura (payload jsonb) y de la tabla
  dimension | row_count | payload_comprimido_en_disco | payload_texto_json | bytes_json_por_fila 
 -----------+-----------+-----------------------------+--------------------+---------------------
@@ -17,14 +25,14 @@ Time: 27.804 ms
  query     |      5000 | 97 kB                       | 648 kB             |               132.8
 (2 rows)
 
-Time: 18.232 ms
+Time: 17.607 ms
  tabla_con_indices | tabla_sin_indices 
 -------------------+-------------------
  304 kB            | 8192 bytes
 (1 row)
 
-Time: 0.288 ms
--- 4) Lectura de la vigente (plan real con búferes)
+Time: 0.303 ms
+-- 4) Lectura de la vigente (plan real con búferes): solo índice
                                                     QUERY PLAN                                                     
 -------------------------------------------------------------------------------------------------------------------
  Limit (actual rows=1 loops=1)
@@ -33,13 +41,13 @@ Time: 0.288 ms
          Index Cond: ((property_domain = 'astisl.es'::text) AND (dimension = 'page'::text) AND (period_days = 28))
          Buffers: shared hit=5
  Planning:
-   Buffers: shared hit=65
- Planning Time: 0.186 ms
- Execution Time: 0.022 ms
+   Buffers: shared hit=17
+ Planning Time: 0.116 ms
+ Execution Time: 0.023 ms
 (9 rows)
 
-Time: 0.471 ms
--- 4b) Lectura que MATERIALIZA el jsonb (no solo el índice): bytes de texto y tiempo de extraer 5.000 filas
+Time: 0.458 ms
+-- 4b) Lectura que MATERIALIZA el jsonb: bytes de texto y tiempo de extraer 5.000 filas
                                                        QUERY PLAN                                                        
 -------------------------------------------------------------------------------------------------------------------------
  Aggregate (actual rows=1 loops=1)
@@ -51,51 +59,37 @@ Time: 0.471 ms
                Buffers: shared hit=2
  Planning:
    Buffers: shared hit=3
- Planning Time: 0.058 ms
- Execution Time: 4.734 ms
+ Planning Time: 0.063 ms
+ Execution Time: 4.609 ms
 (11 rows)
 
-Time: 4.976 ms
-Timing is on.
+Time: 4.929 ms
 COPY 1
-Time: 8.139 ms
+Time: 8.378 ms
    (tiempo de la línea anterior = extracción + serialización del jsonb a texto; sin HTTP)
--- 5) Tres capturas más para la misma combinación, después limpieza a 3 (coste del DELETE)
-INSERT 0 3
-Time: 55.926 ms
-                                                           QUERY PLAN                                                            
----------------------------------------------------------------------------------------------------------------------------------
- Delete on gsc_dimension_snapshots d (actual rows=0 loops=1)
-   Buffers: shared hit=84
-   ->  Index Scan using gsc_dim_snap_current_idx on gsc_dimension_snapshots d (actual rows=1 loops=1)
-         Index Cond: ((property_domain = 'astisl.es'::text) AND (dimension = 'page'::text) AND (period_days = 28))
-         Filter: (NOT (hashed SubPlan 1))
-         Rows Removed by Filter: 3
-         Buffers: shared hit=4
-         SubPlan 1
-           ->  Limit (actual rows=3 loops=1)
-                 Buffers: shared hit=2
-                 ->  Index Only Scan using gsc_dim_snap_current_idx on gsc_dimension_snapshots (actual rows=3 loops=1)
-                       Index Cond: ((property_domain = 'astisl.es'::text) AND (dimension = 'page'::text) AND (period_days = 28))
-                       Heap Fetches: 3
-                       Buffers: shared hit=2
- Planning:
-   Buffers: shared hit=3
- Planning Time: 0.108 ms
- Execution Time: 0.131 ms
-(18 rows)
+-- 5) Tres publicaciones de 5.000 filas más en la misma combinación: coste de publicar CON retención (lock + insert + delete)
+ gsc_publish_dimension_snapshot 
+--------------------------------
+                              3
+                              4
+                              5
+(3 rows)
 
-Time: 1.039 ms
--- 6) Comprobación: quedan 3 capturas de la combinación y la vigente es la de mayor requested_at
+Time: 54.362 ms
+-- 6) Comprobación: quedan 3 capturas de la combinación
  capturas_retenidas 
 --------------------
                   3
 (1 row)
 
-Time: 0.227 ms
+Time: 0.377 ms
 -- 7) Escenario de URLs POCO repetitivas (md5), 90 días, para no mezclarlo con el escenario comprimible
-INSERT 0 1
-Time: 82.341 ms
+ gsc_publish_dimension_snapshot 
+--------------------------------
+                              6
+(1 row)
+
+Time: 73.656 ms
 -- 8) Tamaño comparado de las capturas de 5.000 filas (escenario comprimible vs poco repetitivo)
  period_days | dimension | payload_en_disco | texto_json | ratio_compresion 
 -------------+-----------+------------------+------------+------------------
@@ -106,4 +100,4 @@ Time: 82.341 ms
           90 | page      | 777 kB           | 1265 kB    |            0.615
 (5 rows)
 
-Time: 50.957 ms
+Time: 48.332 ms
