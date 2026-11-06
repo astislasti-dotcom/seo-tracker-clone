@@ -108,7 +108,7 @@ Tiempos:
 - Limpieza a 3 capturas: 0,13 ms de ejecución.
 - Tabla con índices tras las pruebas: 304 kB.
 
-**Cota superior de almacenamiento.** Hay 12 combinaciones (2 propiedades × 2 dimensiones × 3 periodos) y 3 capturas retenidas por combinación, es decir, 36 capturas. Si todas tuvieran 5.000 filas poco repetitivas como la medida (777 kB en disco), la cota es **36 × 777 kB ≈ 28 MB**, más índices. Es un límite superior, no un valor esperado: las capturas reales de consultas y páginas tendrán menos filas en la mayoría de los casos. Este número sustituye al de 4 MB.
+**Escenario sintético de almacenamiento poco comprimible.** Hay 12 combinaciones (2 propiedades × 2 dimensiones × 3 periodos) y 3 capturas retenidas por combinación, es decir, 36 capturas. Si todas tuvieran 5.000 filas poco repetitivas como la medida (777 kB en disco), el resultado sería **36 × 777 kB ≈ 28 MB**, más índices. **No es una cota superior demostrada**: es un escenario sintético con URLs poco comprimibles. Los datos reales pueden comprimir mejor o peor, y no se han medido con datos reales de Search Console.
 
 ## Defecto encontrado y corregido durante las pruebas
 
@@ -139,6 +139,17 @@ El CHECK `gsc_dim_snap_rows_ck` evaluaba `jsonb_array_length(payload)` sin compr
 | Aplicación en Supabase | Solo con autorización expresa, tras la revisión | Por decidir |
 
 Son estimaciones de esfuerzo de desarrollo, no compromisos de fecha.
+
+## Condiciones antes de aplicar o activar escritura real
+
+Según la segunda revisión de ChatGPT (PR #35, SHA `f01b67a`), GSC-06B queda aceptable como propuesta offline. Estas condiciones son puertas de aceptación, no son cumplidas todavía:
+
+1. **Retención estricta.** Las pruebas demuestran que, tras dos confirmaciones concurrentes, pueden quedar **4 capturas** hasta una segunda limpieza. Sin cron ni sincronización posterior garantizada, ese estado puede durar indefinidamente. Antes de activar GSC-06C con datos reales hay que implementar y probar una estrategia acotada que garantice las 3 versiones por combinación (por ejemplo, serializar la escritura por combinación y limpiar al terminar, o un mecanismo SQL equivalente). **La segunda pasada manual de las pruebas no es una convergencia automática.**
+2. **Preflight completo sobre la base real.** El preflight actual no verifica la expresión exacta de los CHECK, los valores por defecto ni los índices de una tabla preexistente. Antes de aplicar sobre Supabase hay que examinar el estado real de la tabla (solo con autorización expresa) y reforzar la idempotencia. No se repara estructura incompatible automáticamente.
+
+Además, antes de aprobar una migración real hay que medir el transporte HTTP, la versión de PostgreSQL, los roles y los privilegios del proyecto.
+
+No se desarrolla GSC-06C hasta recibir autorización expresa del propietario.
 
 ## Lo que no se ha hecho (y sigue requiriendo autorización)
 
