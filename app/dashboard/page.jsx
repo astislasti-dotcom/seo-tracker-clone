@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 import './dashboard.css';
 import { buildDashboardModel, DISPLAY, summarizeKeywords } from '../../lib/keywords/measurements.mjs';
 import { brandLabel, formatMeasurementDate, measurementSubtitle } from '../../lib/keywords/labels.mjs';
 import { readAllRows } from '../../lib/keywords/paginate.mjs';
+import { MSG_LOGOUT_FAILED, signOutSafely } from '../../lib/auth/password-login.mjs';
 
 // The anon client is used only for the owner's session. Table data is read through the
 // owner-only server route /api/keyword-tracking, never directly from the database.
@@ -158,11 +160,21 @@ function SkeletonRows() {
 /* ---------- Page ---------- */
 
 export default function Dashboard() {
+  const router = useRouter();
   const [model, setModel] = useState(LOADING_MODEL);
   const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState('overview');
   const [brand, setBrand] = useState('all');
   const [query, setQuery] = useState('');
+  const [logoutError, setLogoutError] = useState('');
+
+  // Closes only this browser's session, then returns to the login page.
+  async function onLogout() {
+    setLogoutError('');
+    const ok = await signOutSafely(supabase.auth);
+    if (ok) router.push('/login');
+    else setLogoutError(MSG_LOGOUT_FAILED);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -378,7 +390,11 @@ export default function Dashboard() {
                   ))}
                 </div>
               )}
+              <button type="button" onClick={onLogout} style={{ marginLeft: 'auto', alignSelf: 'flex-start' }}>
+                Cerrar sesión
+              </button>
             </header>
+            {logoutError && <p role="alert" style={{ margin: '8px 0' }}>{logoutError}</p>}
 
             {measurementBanner && view === 'overview' && (
               <div className="sd-banner" data-tone="error" role="alert">
