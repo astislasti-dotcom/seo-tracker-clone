@@ -7,13 +7,13 @@ Google Search Console, no se ha tocado Supabase, Vercel ni Production, y no hay 
 
 Módulos nuevos, sin conexión a rutas, cron ni UI:
 
-- `lib/gsc/snapshot-ingest.mjs`: lógica pura y transporte inyectado. Solo acepta `astisl.es` y `3av.events` con su `siteUrl` de confianza; `responseAggregationType` admite `auto`, `byPage` y `byProperty`. Construye la petición
+- `lib/gsc/snapshot-ingest.mjs`: lógica pura y transporte inyectado. Solo acepta `astisl.es` y `3av.events`, y su `siteUrl` se toma de `config/gsc-properties.json` (fuente única, inyectable en pruebas); `responseAggregationType` admite `auto`, `byPage` y `byProperty`. Construye la petición
   (una dimensión `query` o `page`, `dataState: 'final'`, `rowLimit: 5000`), valida todas las
   filas y arma el registro para la función SQL.
 - `lib/gsc/snapshot-store.mjs`: único adaptador de escritura. Llama a
   `rpc('gsc_publish_dimension_snapshot', registro)`. No usa `from()`, `insert()`, `upsert()`,
   `update()` ni `delete()`.
-- `tests/gsc-snapshot-ingest.test.mjs`: 31 pruebas con transporte y repositorio simulados.
+- `tests/gsc-snapshot-ingest.test.mjs`: 35 pruebas con transporte y repositorio simulados.
 
 ## Dependencia de PR #35
 

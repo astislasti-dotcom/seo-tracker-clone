@@ -12,11 +12,14 @@ import {
   ingestAllSnapshots,
 } from '../lib/gsc/snapshot-ingest.mjs';
 import { createSnapshotRepo, SnapshotStorageError, PUBLISH_FUNCTION } from '../lib/gsc/snapshot-store.mjs';
+// Configuración compartida real: los valores de siteUrl se leen de aquí, no se copian en el test.
+import propertiesConfig from '../config/gsc-properties.json' with { type: 'json' };
 
 const NOW = new Date('2026-11-06T12:00:00Z');
 const CLOCK = () => NOW;
 const SECRET = 'fixture-service-role-value-do-not-leak';
-const PROPERTY = { domain: 'astisl.es', siteUrl: 'sc-domain:astisl.es' };
+const PROPERTY = { domain: 'astisl.es', siteUrl: propertiesConfig['astisl.es'].siteUrl };
+const PROPERTY_3AV = { domain: '3av.events', siteUrl: propertiesConfig['3av.events'].siteUrl };
 const CREDENTIALS = { fixture: true };
 
 // Filas sintéticas válidas. El texto de las consultas es ficticio.
@@ -288,7 +291,7 @@ test('entradas no válidas no llaman a Google ni a publish', async () => {
 test('ingestAllSnapshots recorre 2 propiedades × 2 dimensiones × 3 periodos = 12 snapshots', async () => {
   const { transport, calls } = okTransport();
   const { repo, records } = fakeRepo();
-  const properties = [PROPERTY, { domain: '3av.events', siteUrl: 'https://3av.events/' }];
+  const properties = [PROPERTY, PROPERTY_3AV];
   const summary = await ingestAllSnapshots({ properties, clock: CLOCK, credentials: CREDENTIALS, transport, repo });
   assert.equal(summary.ok, true);
   assert.equal(summary.results.length, 12);
@@ -415,10 +418,70 @@ test('el siteUrl enviado a Google sale de la configuración de confianza', async
   const { transport, calls } = okTransport();
   const { repo } = fakeRepo();
   await ingestSnapshot({
-    property: { domain: '3av.events', siteUrl: 'https://3av.events/' },
+    property: PROPERTY_3AV,
     dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
   });
-  assert.equal(calls[0].siteUrl, 'https://3av.events/');
+  assert.equal(calls[0].siteUrl, propertiesConfig['3av.events'].siteUrl);
+});
+
+// --- 11. Configuración compartida como única fuente de siteUrl (corrección PR #36) ----
+
+test('un par cruzado o invertido respecto a config/gsc-properties.json se rechaza sin llamadas', async () => {
+  const { transport, calls } = okTransport();
+  const { repo, records } = fakeRepo();
+  // Valores de la lista fija anterior (invertidos respecto a la configuración real).
+  const crossed = [
+    { domain: 'astisl.es', siteUrl: 'sc-domain:astisl.es' },
+    { domain: '3av.events', siteUrl: 'https://3av.events/' },
+    { domain: 'astisl.es', siteUrl: 'sc-domain:3av.events' },
+  ];
+  for (const property of crossed) {
+    const result = await ingestSnapshot({
+      property, dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'invalid_request');
+  }
+  assert.equal(calls.length, 0);
+  assert.equal(records.length, 0);
+});
+
+test('la configuración inyectada es la que decide siteUrl, no un valor fijo del módulo', async () => {
+  const injected = { 'astisl.es': { brand: 'ASTI', siteUrl: 'sc-domain:configuracion-inyectada.example' } };
+  const { transport, calls } = okTransport();
+  const { repo } = fakeRepo();
+  const ok = await ingestSnapshot({
+    property: { domain: 'astisl.es', siteUrl: 'sc-domain:configuracion-inyectada.example' },
+    dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo, config: injected,
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(calls[0].siteUrl, 'sc-domain:configuracion-inyectada.example');
+
+  const { transport: t2, calls: calls2 } = okTransport();
+  const rejected = await ingestSnapshot({
+    property: PROPERTY, dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS,
+    transport: t2, repo, config: injected,
+  });
+  assert.equal(rejected.code, 'invalid_request');
+  assert.equal(calls2.length, 0);
+});
+
+test('un dominio presente en la configuración pero fuera de la lista admitida se rechaza', async () => {
+  const injected = { 'otro.example': { brand: 'X', siteUrl: 'sc-domain:otro.example' } };
+  const { transport, calls } = okTransport();
+  const { repo, records } = fakeRepo();
+  const result = await ingestSnapshot({
+    property: { domain: 'otro.example', siteUrl: 'sc-domain:otro.example' },
+    dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo, config: injected,
+  });
+  assert.equal(result.code, 'invalid_request');
+  assert.equal(calls.length, 0);
+  assert.equal(records.length, 0);
+});
+
+test('la configuración real del repositorio contiene las dos propiedades admitidas', () => {
+  assert.equal(typeof propertiesConfig['astisl.es'].siteUrl, 'string');
+  assert.equal(typeof propertiesConfig['3av.events'].siteUrl, 'string');
 });
 
 // --- 10. Sin escrituras directas en el código de GSC-06C ------------------------------
