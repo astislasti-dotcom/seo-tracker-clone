@@ -1,0 +1,74 @@
+Timing is on.
+== Medidas GSC-06B (datos ficticios)
+SET
+Time: 0.160 ms
+SELECT 5000
+Time: 7.549 ms
+-- 1) Inserción de una captura completa de 5.000 filas (página, 28 días): una sola sentencia
+INSERT 0 1
+Time: 36.110 ms
+-- 2) Inserción de una captura de consultas de 5.000 filas (28 días)
+INSERT 0 1
+Time: 27.675 ms
+-- 3) Tamaño de cada captura (payload jsonb) y de la tabla
+ dimension | row_count | payload_comprimido_en_disco | payload_texto_json | bytes_json_por_fila 
+-----------+-----------+-----------------------------+--------------------+---------------------
+ page      |      5000 | 121 kB                      | 1493 kB            |               305.7
+ query     |      5000 | 97 kB                       | 648 kB             |               132.8
+(2 rows)
+
+Time: 18.478 ms
+ tabla_con_indices | tabla_sin_indices 
+-------------------+-------------------
+ 304 kB            | 8192 bytes
+(1 row)
+
+Time: 0.362 ms
+-- 4) Lectura de la vigente (plan real con búferes)
+                                                    QUERY PLAN                                                     
+-------------------------------------------------------------------------------------------------------------------
+ Limit (actual rows=1 loops=1)
+   Buffers: shared hit=5
+   ->  Index Scan using gsc_dim_snap_current_idx on gsc_dimension_snapshots (actual rows=1 loops=1)
+         Index Cond: ((property_domain = 'astisl.es'::text) AND (dimension = 'page'::text) AND (period_days = 28))
+         Buffers: shared hit=5
+ Planning:
+   Buffers: shared hit=65
+ Planning Time: 0.239 ms
+ Execution Time: 0.029 ms
+(9 rows)
+
+Time: 0.623 ms
+-- 5) Tres capturas más para la misma combinación, después limpieza a 3 (coste del DELETE)
+INSERT 0 3
+Time: 52.012 ms
+                                                           QUERY PLAN                                                            
+---------------------------------------------------------------------------------------------------------------------------------
+ Delete on gsc_dimension_snapshots d (actual rows=0 loops=1)
+   Buffers: shared hit=84
+   ->  Index Scan using gsc_dim_snap_current_idx on gsc_dimension_snapshots d (actual rows=1 loops=1)
+         Index Cond: ((property_domain = 'astisl.es'::text) AND (dimension = 'page'::text) AND (period_days = 28))
+         Filter: (NOT (hashed SubPlan 1))
+         Rows Removed by Filter: 3
+         Buffers: shared hit=4
+         SubPlan 1
+           ->  Limit (actual rows=3 loops=1)
+                 Buffers: shared hit=2
+                 ->  Index Only Scan using gsc_dim_snap_current_idx on gsc_dimension_snapshots (actual rows=3 loops=1)
+                       Index Cond: ((property_domain = 'astisl.es'::text) AND (dimension = 'page'::text) AND (period_days = 28))
+                       Heap Fetches: 3
+                       Buffers: shared hit=2
+ Planning:
+   Buffers: shared hit=3
+ Planning Time: 0.144 ms
+ Execution Time: 0.144 ms
+(18 rows)
+
+Time: 1.162 ms
+-- 6) Comprobación: quedan 3 capturas de la combinación y la vigente es la de mayor requested_at
+ capturas_retenidas 
+--------------------
+                  3
+(1 row)
+
+Time: 0.223 ms

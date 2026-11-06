@@ -1,0 +1,29 @@
+== Positivo
+PASS  segunda aplicación idempotente (misma definición de vista)
+PASS  suite SQL: privilegios, RLS, restricciones, vigencia, retención, inmutabilidad
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:35: NOTICE:  OK 1: privilegios y RLS correctos
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:44: NOTICE:  OK 1b: vista de lectura restringida a service_role
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:58: NOTICE:  OK 2: anon no lee snapshots (permiso denegado)
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:70: NOTICE:  OK 3a: captura válida aceptada
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:85: NOTICE:  OK 3b: 12 restricciones rechazan datos inválidos
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:114: NOTICE:  OK 4a: gana la captura solicitada más tarde, no la guardada más tarde
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:135: NOTICE:  OK 4b: empate en requested_at resuelto por id (determinista, comprobado en vista)
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:144: NOTICE:  OK 4c: una fila vigente por combinación
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:178: NOTICE:  OK 5: retención de 3 y vigente intacta
+        psql:/home/claude/astislasti-dotcom/seo-tracker-clone/supabase/proposed/tests/gsc_dimension_snapshots.test.sql:192: NOTICE:  OK 6: service_role no puede modificar capturas
+PASS  rollback: captura válida se revierte si la segunda de la transacción falla
+PASS  concurrencia: A (10:00, confirmada tarde) no desplaza a B (11:00); A sin confirmar invisible
+        mientras A está abierta -> vigente: 'B solicitada 11:00' | filas de A visibles: 0
+        tras confirmar A        -> vigente: 'B solicitada 11:00'
+PASS  medidas registradas
+== Negativos (la propuesta mutada debe romper la prueba indicada)
+PASS  sin RLS (ENABLE ROW LEVEL SECURITY retirado)                 (esperado: fail)
+PASS  service_role con UPDATE (capturas mutables)                  (esperado: fail)
+PASS  SELECT de la vista para anon                                 (esperado: fail)
+PASS  sin CHECK de truncado (5.000 filas sin truncated)            (esperado: fail)
+PASS  sin CHECK de row_count = jsonb_array_length                  (esperado: fail)
+PASS  sin CHECK de ventana (27 días con periodo 28)               (esperado: fail)
+PASS  vista eligiendo la captura MÁS ANTIGUA (ASC)                (esperado: fail)
+PASS  vista sin desempate por id                                   (esperado: fail)
+
+TODOS LOS CASOS SE COMPORTAN COMO SE ESPERABA.
