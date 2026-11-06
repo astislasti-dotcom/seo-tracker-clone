@@ -1,0 +1,6 @@
+{"dimension":"query","rowsInSource":5000,"limit":100,"validateMs":3.42,"sortAndPageMs":1.36,"responseRows":100,"responseBytes":10906,"responseMiB":0.01}
+{"dimension":"query","rowsInSource":5000,"limit":500,"validateMs":3.42,"sortAndPageMs":1.07,"responseRows":500,"responseBytes":53289,"responseMiB":0.051}
+{"dimension":"query","sourcePayloadBytes":408662,"sourcePayloadMiB":0.39,"approxHeapDeltaMiB":2.47}
+{"dimension":"page","rowsInSource":5000,"limit":100,"validateMs":1.34,"sortAndPageMs":1.6,"responseRows":100,"responseBytes":12105,"responseMiB":0.012}
+{"dimension":"page","rowsInSource":5000,"limit":500,"validateMs":1.34,"sortAndPageMs":0.56,"responseRows":500,"responseBytes":59288,"responseMiB":0.057}
+{"dimension":"page","sourcePayloadBytes":468662,"sourcePayloadMiB":0.447,"approxHeapDeltaMiB":1.577}
