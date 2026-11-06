@@ -355,6 +355,72 @@ test('una respuesta sin id se trata como error de almacenamiento', async () => {
   await assert.rejects(() => repo.publish({}), { code: 'storage_error' });
 });
 
+// --- 9b. Revisión PR #36: byPage, dominios autorizados ----------------------------------
+
+test('páginas con responseAggregationType byPage se publican end-to-end', async () => {
+  const transport = async (args) => {
+    assert.equal(args.body.dimensions[0], 'page');
+    assert.equal(args.body.aggregationType, 'auto');
+    return { rows: [row('https://astisl.es/ficticia')], responseAggregationType: 'byPage' };
+  };
+  const { repo, records } = fakeRepo(55);
+  const result = await ingestSnapshot({
+    property: PROPERTY, dimension: 'page', periodDays: 28, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.id, 55);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].p_dimension, 'page');
+  assert.equal(records[0].p_aggregation_type, 'auto');
+  assert.equal(records[0].p_response_aggregation_type, 'byPage');
+  assert.equal(records[0].p_row_count, 1);
+});
+
+test('byNewsShowcasePanel no es un valor válido de respuesta', async () => {
+  const transport = async () => ({ rows: [row('x')], responseAggregationType: 'byNewsShowcasePanel' });
+  const { repo, records } = fakeRepo();
+  const result = await ingestSnapshot({
+    property: PROPERTY, dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
+  });
+  assert.equal(result.code, 'invalid_response');
+  assert.equal(records.length, 0);
+});
+
+test('un dominio no autorizado se rechaza sin ninguna llamada a Google', async () => {
+  const { transport, calls } = okTransport();
+  const { repo, records } = fakeRepo();
+  const result = await ingestSnapshot({
+    property: { domain: 'evil.example', siteUrl: 'sc-domain:evil.example' },
+    dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'invalid_request');
+  assert.equal(calls.length, 0);
+  assert.equal(records.length, 0);
+});
+
+test('un siteUrl que no coincide con la configuración de confianza se rechaza sin llamadas', async () => {
+  const { transport, calls } = okTransport();
+  const { repo, records } = fakeRepo();
+  const result = await ingestSnapshot({
+    property: { domain: 'astisl.es', siteUrl: 'sc-domain:otra-propiedad.example' },
+    dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
+  });
+  assert.equal(result.code, 'invalid_request');
+  assert.equal(calls.length, 0);
+  assert.equal(records.length, 0);
+});
+
+test('el siteUrl enviado a Google sale de la configuración de confianza', async () => {
+  const { transport, calls } = okTransport();
+  const { repo } = fakeRepo();
+  await ingestSnapshot({
+    property: { domain: '3av.events', siteUrl: 'https://3av.events/' },
+    dimension: 'query', periodDays: 7, clock: CLOCK, credentials: CREDENTIALS, transport, repo,
+  });
+  assert.equal(calls[0].siteUrl, 'https://3av.events/');
+});
+
 // --- 10. Sin escrituras directas en el código de GSC-06C ------------------------------
 
 test('los módulos de GSC-06C no contienen escrituras directas a la tabla', async () => {
